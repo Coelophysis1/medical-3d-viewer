@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Simple STL Viewer</title>
+  <style>
+    body { margin: 0; font-family: Arial, sans-serif; }
+    #info { padding: 10px; background: #f0f0f0; }
+    #canvas { display: block; }
+  </style>
+</head>
+<body>
+  <div id="info">Loading...</div>
+  <canvas id="canvas" width="800" height="600"></canvas>
+  
+  <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+  <script src="https://unpkg.com/three@0.160.0/examples/js/controls/OrbitControls.js"></script>
+  <script src="https://unpkg.com/three@0.160.0/examples/js/loaders/STLLoader.js"></script>
+  
+  <script>
+    const info = document.getElementById('info');
+    const canvas = document.getElementById('canvas');
+    
+    // Scene setup
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0xdddddd);
+    
+    const camera = new THREE.PerspectiveCamera(45, 800 / 600, 0.1, 10000);
+    camera.position.set(100, 100, 100);
+    
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+    renderer.setSize(800, 600);
+    
+    // Lights
+    scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+    const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+    dirLight.position.set(50, 50, 50);
+    scene.add(dirLight);
+    
+    // Grid
+    scene.add(new THREE.GridHelper(200, 20));
+    
+    // Controls
+    const controls = new THREE.OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    
+    // Test file path from config
+    const filePath = '/STL文件/stl_1775810473796_2p7p8i.stl';
+    
+    info.textContent = 'Loading: ' + filePath;
+    console.log('Starting load:', filePath);
+    
+    // Load STL
+    const loader = new THREE.STLLoader();
+    loader.load(
+      filePath,
+      function(geometry) {
+        console.log('Loaded! Vertices:', geometry.attributes.position.count);
+        info.textContent = 'Success! Vertices: ' + geometry.attributes.position.count;
+        
+        const material = new THREE.MeshPhongMaterial({
+          color: 0x3B82F6,
+          specular: 0x111111,
+          shininess: 30,
+          side: THREE.DoubleSide
+        });
+        
+        const mesh = new THREE.Mesh(geometry, material);
+        scene.add(mesh);
+        
+        // Center
+        geometry.computeBoundingBox();
+        const center = new THREE.Vector3();
+        geometry.boundingBox.getCenter(center);
+        mesh.position.sub(center);
+        
+        // Scale to fit
+        const size = new THREE.Vector3();
+        geometry.boundingBox.getSize(size);
+        const maxDim = Math.max(size.x, size.y, size.z);
+        mesh.scale.setScalar(150 / maxDim);
+        
+        info.textContent += ' | Center: (' + center.x.toFixed(1) + ', ' + center.y.toFixed(1) + ', ' + center.z.toFixed(1) + ') | Size: ' + maxDim.toFixed(1);
+      },
+      function(xhr) {
+        console.log('Progress:', (xhr.loaded / xhr.total * 100) + '%');
+        info.textContent = 'Progress: ' + (xhr.loaded / xhr.total * 100).toFixed(0) + '%';
+      },
+      function(error) {
+        console.error('Load error:', error);
+        info.textContent = 'Error: ' + error;
+        
+        // Fallback box
+        const geo = new THREE.BoxGeometry(30, 40, 50);
+        const mat = new THREE.MeshPhongMaterial({ color: 0xff0000 });
+        scene.add(new THREE.Mesh(geo, mat));
+      }
+    );
+    
+    // Animation loop
+    function animate() {
+      requestAnimationFrame(animate);
+      controls.update();
+      renderer.render(scene, camera);
+    }
+    animate();
+  </script>
+</body>
+</html>

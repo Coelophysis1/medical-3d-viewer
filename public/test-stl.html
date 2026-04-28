@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>STL Test</title>
+  <style>
+    body { margin: 0; padding: 20px; font-family: Arial; }
+    #info { margin-bottom: 10px; }
+    canvas { border: 1px solid #ccc; }
+  </style>
+</head>
+<body>
+  <div id="info">Loading...</div>
+  <canvas id="canvas" width="600" height="400"></canvas>
+  
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+  
+  <script type="module">
+    import * as THREE from 'three';
+    import { STLLoader } from 'three/addons/loaders/STLLoader.js';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    
+    const info = document.getElementById('info');
+    const canvas = document.getElementById('canvas');
+    
+    // Scene
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0xeeeeee);
+    
+    // Camera
+    const camera = new THREE.PerspectiveCamera(45, 600 / 400, 0.1, 10000);
+    camera.position.set(100, 100, 100);
+    
+    // Renderer
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+    renderer.setSize(600, 400);
+    
+    // Lights
+    scene.add(new THREE.AmbientLight(0xffffff, 0.8));
+    const dirLight = new THREE.DirectionalLight(0xffffff, 0.6);
+    dirLight.position.set(50, 50, 50);
+    scene.add(dirLight);
+    
+    // Controls
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    
+    // Grid
+    const grid = new THREE.GridHelper(200, 20);
+    scene.add(grid);
+    
+    // Load STL
+    const filePath = '/STL文件/preop_right_humerus.stl';
+    info.textContent = 'Loading: ' + filePath;
+    
+    console.log('Starting to load:', filePath);
+    
+    fetch(filePath)
+      .then(response => {
+        console.log('Fetch response status:', response.status);
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        return response.text();
+      })
+      .then(text => {
+        console.log('Response text length:', text.length);
+        console.log('First 100 chars:', text.substring(0, 100));
+        
+        // Check if ASCII
+        if (text.trim().startsWith('solid')) {
+          console.log('ASCII format detected');
+          return parseASCIISTL(text);
+        } else {
+          console.log('Binary format - re-fetching');
+          return fetch(filePath)
+            .then(r => r.arrayBuffer())
+            .then(buffer => {
+              console.log('Binary buffer length:', buffer.byteLength);
+              const loader = new STLLoader();
+              return loader.parse(buffer);
+            });
+        }
+      })
+      .then(geometry => {
+        console.log('Geometry created, vertices:', geometry.attributes.position.count);
+        
+        const material = new THREE.MeshPhongMaterial({
+          color: 0x8B5CF6,
+          specular: 0x111111,
+          shininess: 30,
+          side: THREE.DoubleSide
+        });
+        
+        const mesh = new THREE.Mesh(geometry, material);
+        scene.add(mesh);
+        
+        // Center and scale
+        geometry.computeBoundingBox();
+        const center = new THREE.Vector3();
+        geometry.boundingBox.getCenter(center);
+        mesh.position.sub(center);
+        
+        const size = new THREE.Vector3();
+        geometry.boundingBox.getSize(size);
+        const maxDim = Math.max(size.x, size.y, size.z);
+        mesh.scale.setScalar(100 / maxDim);
+        
+        info.textContent = 'Success! Vertices: ' + geometry.attributes.position.count;
+      })
+      .catch(err => {
+        console.error('Error:', err);
+        info.textContent = 'Error: ' + err.message;
+        
+        // Fallback to box
+        const geo = new THREE.BoxGeometry(30, 40, 50);
+        const mat = new THREE.MeshPhongMaterial({ color: 0xff0000 });
+        scene.add(new THREE.Mesh(geo, mat));
+        info.textContent = 'Using placeholder box (error: ' + err.message + ')';
+      });
+    
+    // Simple ASCII parser
+    function parseASCIISTL(text) {
+      console.log('Parsing ASCII STL...');
+      const vertices = [];
+      const normals = [];
+      
+      const faceRegex = /facet\s+normal\s+([\-+]?[\d]+\.?[\d]*)\s+([\-+]?[\d]+\.?[\d]*)\s+([\-+]?[\d]+\.?[\d]*)\s+outer\s+loop([\s\S]*?)endloop\s+endfacet/g;
+      
+      let faceCount = 0;
+      let faceMatch;
+      while ((faceMatch = faceRegex.exec(text)) !== null) {
+        faceCount++;
+        const nx = parseFloat(faceMatch[1]);
+        const ny = parseFloat(faceMatch[2]);
+        const nz = parseFloat(faceMatch[3]);
+        const block = faceMatch[4];
+        
+        const vRegex = /vertex\s+([\-+]?[\d]+\.?[\d]*)\s+([\-+]?[\d]+\.?[\d]*)\s+([\-+]?[\d]+\.?[\d]*)/g;
+        let vMatch;
+        while ((vMatch = vRegex.exec(block)) !== null) {
+          vertices.push(parseFloat(vMatch[1]), parseFloat(vMatch[2]), parseFloat(vMatch[3]));
+        }
+        normals.push(nx, ny, nz, nx, ny, nz, nx, ny, nz);
+      }
+      
+      console.log('Faces found:', faceCount);
+      console.log('Vertices collected:', vertices.length);
+      
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+      geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+      
+      return geometry;
+    }
+    
+    // Animate
+    function animate() {
+      requestAnimationFrame(animate);
+      controls.update();
+      renderer.render(scene, camera);
+    }
+    animate();
+  </script>
+</body>
+</html>
