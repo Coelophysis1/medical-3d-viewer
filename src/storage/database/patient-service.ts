@@ -37,18 +37,64 @@ export async function getOrCreatePatient(name: string, phone: string): Promise<P
     return existing as Patient;
   }
 
-  // 不存在则创建
-  const { data: newPatient, error } = await client
-    .from('patients')
-    .insert({ name, phone })
-    .select()
-    .single();
+  // 不存在则创建（带重试，处理并发或序列不同步导致的主键冲突）
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const { data: newPatient, error } = await client
+      .from('patients')
+      .insert({ name, phone })
+      .select()
+      .single();
 
-  if (error) {
-    throw new Error(`创建患者失败: ${error.message}`);
+    if (!error && newPatient) {
+      return newPatient as Patient;
+    }
+
+    if (error) {
+      const msg = error.message || '';
+      // 主键冲突（序列不同步或并发插入）
+      if (msg.includes('duplicate key') || msg.includes('unique constraint')) {
+        // 并发插入同一条记录：重新查询即可
+        const { data: retryExisting } = await client
+          .from('patients')
+          .select('*')
+          .eq('name', name)
+          .eq('phone', phone)
+          .maybeSingle();
+
+        if (retryExisting) {
+          return retryExisting as Patient;
+        }
+
+        // 序列不同步导致的主键冲突：查询最大ID，用 max(id)+1 显式指定ID重试
+        const { data: maxRow } = await client
+          .from('patients')
+          .select('id')
+          .order('id', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (maxRow) {
+          const nextId = maxRow.id + 1;
+          const { data: retryPatient, error: retryError } = await client
+            .from('patients')
+            .insert({ id: nextId, name, phone })
+            .select()
+            .single();
+
+          if (!retryError && retryPatient) {
+            return retryPatient as Patient;
+          }
+        }
+
+        // 最后再试一次普通插入（可能序列已被其他请求修复）
+        if (attempt < 2) continue;
+      }
+
+      throw new Error(`创建患者失败: ${error.message}`);
+    }
   }
 
-  return newPatient as Patient;
+  throw new Error('创建患者失败: 多次重试后仍失败');
 }
 
 // 根据姓名和手机号验证患者身份
