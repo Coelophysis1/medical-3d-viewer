@@ -1,13 +1,10 @@
 // 医学3D模型类型定义
 
-// 基于 3D Slicer 解剖学配色表
-export type ModelColor =
-  // 核心组织与结构
-  | 'bone' | 'skin' | 'muscle' | 'connective' | 'blood' | 'organ' | 'tissue'
-  // 病灶与特殊状态
-  | 'mass' | 'necrosis' | 'bleeding' | 'edema'
-  // 环境与其他
-  | 'foreign-object';
+export type ModelColor = 
+  | 'red' | 'orange' | 'yellow' | 'lime' | 'green' | 'teal' | 'cyan' 
+  | 'sky' | 'blue' | 'indigo' | 'violet' | 'purple' | 'fuchsia' | 'pink'
+  | 'rose' | 'stone' | 'slate' | 'zinc' | 'neutral' | 'gray' | 'slate-gray'
+  | 'coral' | 'gold' | 'navy';
 
 export interface ModelConfig {
   id?: number;
@@ -63,41 +60,65 @@ export interface GetConfigResponse {
   error?: string;
 }
 
-// 解剖学配色映射 (3D Slicer)
+// 24色颜色映射
 export const COLOR_MAP: Record<ModelColor, string> = {
-  bone: '#F1D691',         // 骨骼 - 象牙米黄
-  skin: '#B17A65',         // 皮肤 - 偏红深棕
-  muscle: '#C06858',       // 肌肉 - 暗红褐色
-  connective: '#6FB8D2',   // 结缔组织/软骨 - 淡蓝色
-  blood: '#D8654F',        // 血液/动脉 - 偏橙鲜红
-  organ: '#DD8265',        // 脏器/器官 - 橙粉色
-  tissue: '#80AE80',       // 普通组织 - 灰绿色
-  mass: '#90EE90',         // 肿块/肿瘤 - 亮黄绿色
-  necrosis: '#D8BFD8',     // 坏死区 - 淡紫灰色
-  bleeding: '#BC411C',     // 出血 - 深铁锈红
-  edema: '#8CE0E4',        // 水肿 - 青绿色
-  'foreign-object': '#DCF514', // 异物/植入物 - 荧光黄绿色
+  red: '#EF4444',
+  orange: '#F97316',
+  yellow: '#EAB308',
+  lime: '#84CC16',
+  green: '#22C55E',
+  teal: '#14B8A6',
+  cyan: '#06B6D4',
+  sky: '#0EA5E9',
+  blue: '#3B82F6',
+  indigo: '#6366F1',
+  violet: '#8B5CF6',
+  purple: '#A855F7',
+  fuchsia: '#D946EF',
+  pink: '#EC4899',
+  rose: '#F43F5E',
+  stone: '#78716C',
+  slate: '#64748B',
+  zinc: '#71717A',
+  neutral: '#737373',
+  gray: '#6B7280',
+  'slate-gray': '#708090',
+  coral: '#FF6B6B',
+  gold: '#FFD700',
+  navy: '#1E3A5F',
 };
 
-// 解剖学配色中文名称映射
+// 24色中文名称映射
 export const COLOR_NAMES: Record<ModelColor, string> = {
-  bone: '骨骼',
-  skin: '皮肤',
-  muscle: '肌肉',
-  connective: '结缔组织',
-  blood: '血液/动脉',
-  organ: '脏器/器官',
-  tissue: '普通组织',
-  mass: '肿块/肿瘤',
-  necrosis: '坏死区',
-  bleeding: '出血',
-  edema: '水肿',
-  'foreign-object': '异物/植入物',
+  red: '红色',
+  orange: '橙色',
+  yellow: '黄色',
+  lime: 'lime绿',
+  green: '绿色',
+  teal: '青色',
+  cyan: '青色蓝',
+  sky: '天蓝色',
+  blue: '蓝色',
+  indigo: '靛蓝色',
+  violet: '紫罗兰',
+  purple: '紫色',
+  fuchsia: '品红色',
+  pink: '粉色',
+  rose: '玫瑰红',
+  stone: '石灰色',
+  slate: '板岩色',
+  zinc: '锌灰色',
+  neutral: '中性灰',
+  gray: '灰色',
+  'slate-gray': '蓝灰色',
+  coral: '珊瑚色',
+  gold: '金色',
+  navy: '深蓝色',
 };
 
-// 颜色选项排列顺序：核心组织 → 病灶 → 其他
 export const COLOR_OPTIONS: ModelColor[] = [
-  'bone', 'skin', 'muscle', 'connective', 'blood', 'organ', 'tissue',
-  'mass', 'necrosis', 'bleeding', 'edema',
-  'foreign-object',
+  'red', 'orange', 'yellow', 'lime', 'green', 'teal',
+  'cyan', 'sky', 'blue', 'indigo', 'violet', 'purple',
+  'fuchsia', 'pink', 'rose', 'stone', 'slate', 'zinc',
+  'neutral', 'gray', 'slate-gray', 'coral', 'gold', 'navy',
 ];
