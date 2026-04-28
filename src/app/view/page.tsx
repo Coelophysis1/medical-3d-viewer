@@ -8,7 +8,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
 import { Slider } from '@/components/ui/slider';
 import { Badge } from '@/components/ui/badge';
-import { MedicalConfig, COLOR_MAP, ModelColor } from '@/types/medical';
+import { MedicalConfig, getModelColor, ModelColor } from '@/types/medical';
 
 // Three.js 必须在客户端渲染，使用 dynamic + ssr:false 避免 SSR 问题
 const ThreeDViewer = dynamic(() => import('@/components/ThreeDViewer'), {
@@ -193,7 +193,7 @@ function ViewPageContent() {
                       className="rounded border border-gray-100 sm:rounded-md bg-white/80"
                       style={{ 
                         borderLeftWidth: 2, 
-                        borderLeftColor: COLOR_MAP[model.color] 
+                        borderLeftColor: getModelColor(model.color) 
                       }}
                     >
                       <div className="px-2 py-1.5 sm:px-2.5 sm:py-2">
@@ -201,7 +201,7 @@ function ViewPageContent() {
                           <div className="flex items-center gap-1 sm:gap-1.5 flex-1 min-w-0">
                             <div 
                               className="w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full flex-shrink-0" 
-                              style={{ backgroundColor: COLOR_MAP[model.color] }}
+                              style={{ backgroundColor: getModelColor(model.color) }}
                             />
                             <span className="font-medium text-[10px] sm:text-xs break-all leading-tight">
                               {model.name}

@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import * as THREE from 'three';
 import { TrackballControls } from 'three/examples/jsm/controls/TrackballControls.js';
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
-import { COLOR_MAP, ModelConfig } from '@/types/medical';
+import { getModelColor, ModelConfig } from '@/types/medical';
 import { WBOITRenderer } from '@/lib/wboit';
 
 interface ModelMesh {
@@ -338,7 +338,7 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
         meshData.visible = config.visible;
         meshData.material.opacity = isTransparent ? config.opacity / 100 : 1;
         meshData.material.transparent = isTransparent;
-        meshData.material.color.set(COLOR_MAP[config.color] || '#888888');
+        meshData.material.color.set(getModelColor(config.color));
         meshData.material.needsUpdate = true;
       });
       return;
@@ -402,7 +402,7 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
           const isTransparent = config.opacity < 100;
 
           const material = new THREE.MeshPhongMaterial({
-            color: new THREE.Color(COLOR_MAP[config.color]),
+            color: new THREE.Color(getModelColor(config.color)),
             transparent: isTransparent,
             opacity: isTransparent ? config.opacity / 100 : 1,
             shininess: 30,
@@ -427,7 +427,7 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
           console.error(`处理模型 ${config.name} 失败:`, err);
           const placeholderGeo = new THREE.BoxGeometry(30, 40, 50);
           const material = new THREE.MeshPhongMaterial({
-            color: new THREE.Color(COLOR_MAP[config.color]),
+            color: new THREE.Color(getModelColor(config.color)),
             transparent: true,
             opacity: 0.5,
             shininess: 30,
@@ -572,7 +572,7 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
       meshData.visible = config.visible;
       meshData.material.opacity = isTransparent ? config.opacity / 100 : 1;
       meshData.material.transparent = isTransparent;
-      meshData.material.color.set(COLOR_MAP[config.color] || '#888888');
+      meshData.material.color.set(getModelColor(config.color));
       meshData.material.needsUpdate = true;
     });
   }, [models]);

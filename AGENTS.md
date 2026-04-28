@@ -339,15 +339,37 @@
 { "uploadId": "唯一上传ID" }
 ```
 
-## 模型颜色选项
+## 模型颜色选项（基于3DSlicer组织/器官颜色表）
 
-| 颜色 | 色值 |
-|------|------|
-| purple | #8B5CF6 |
-| red | #EF4444 |
-| blue | #3B82F6 |
-| green | #22C55E |
-| pink | #EC4899 |
+| 颜色键 | 组织/器官 | 色值 |
+|--------|----------|------|
+| tissue | 常规软组织 | #80AE80 |
+| bone | 骨骼 | #F1D691 |
+| skin | 皮肤 | #B17A65 |
+| connective_tissue | 结缔组织 | #6FB8D2 |
+| blood | 血液 | #D8654F |
+| organ | 一般器官 | #DD8265 |
+| mass | 肿块/病灶 | #90EE90 |
+| muscle | 肌肉 | #C06858 |
+| foreign_object | 异物 (植入物) | #DCF514 |
+| teeth | 牙齿 | #FFFADC |
+| fat | 脂肪 | #E6DC46 |
+| gray_matter | 脑灰质 | #C8C8EB |
+| white_matter | 脑白质 | #FAFAD2 |
+| nerve | 神经 | #F4D631 |
+| vein | 静脉 | #0097CE |
+| artery | 动脉 | #D8654F |
+| ligament | 韧带 | #B7D6D3 |
+| tendon | 肌腱 | #98BDCF |
+| cartilage | 软骨 | #6FB8D2 |
+| lymph_node | 淋巴结 | #44AC64 |
+| lymphatic_vessel | 淋巴管 | #6FC583 |
+| cerebrospinal_fluid | 脑脊液 | #55BCFF |
+| bile | 胆汁 | #00911E |
+| fluid | 一般体液 | #AAFAFA |
+| edema | 水肿区 | #8CE0E4 |
+| bleeding | 出血区 | #BC411C |
+| necrosis | 坏死区 | #D8BFD8 |
 
 ## 环境变量
 

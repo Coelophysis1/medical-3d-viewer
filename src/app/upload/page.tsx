@@ -652,7 +652,7 @@ export default function UploadPage() {
                               value={file.color}
                               onValueChange={(value: ModelColor) => updateFile(file.id, { color: value })}
                             >
-                              <SelectTrigger className="w-32 h-9">
+                              <SelectTrigger className="w-40 h-9">
                                 <div className="flex items-center gap-2">
                                   <div 
                                     className="w-4 h-4 rounded-full" 
