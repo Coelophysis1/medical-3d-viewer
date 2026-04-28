@@ -166,6 +166,14 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
     composer: EffectComposer;
     ssaoPass: SSAOPass;
     animationId: number;
+    // 渲染模式切换所需的引用
+    envTexture: THREE.Texture;
+    keyLight: THREE.DirectionalLight;
+    fillLight: THREE.DirectionalLight;
+    rimLight: THREE.DirectionalLight;
+    ambientLight: THREE.AmbientLight;
+    renderPass: RenderPass;
+    outputPass: OutputPass;
   } | null>(null);
   // 手动保存初始相机状态，用于复位
   const savedCameraState = useRef<{
@@ -186,7 +194,7 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
   const centerDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // UI 控制状态
-  const [axesVisible, setAxesVisible] = useState(false);
+  const [renderMode, setRenderMode] = useState<'cinematic' | 'classic'>('cinematic');
   const [bgColorIndex, setBgColorIndex] = useState(2); // 0:黑 1:灰 2:白(默认)
   // 使用 useRef 避免每次渲染创建新数组
   const bgColorsRef = useRef(['#000000', '#808080', '#ffffff']);
@@ -356,6 +364,13 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
       composer,
       ssaoPass,
       animationId: 0,
+      envTexture,
+      keyLight,
+      fillLight,
+      rimLight,
+      ambientLight,
+      renderPass,
+      outputPass,
     };
 
     const animate = () => {
@@ -680,13 +695,64 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
     });
   }, []);
 
-  // 坐标轴切换
-  const handleToggleAxes = useCallback(() => {
+  // 渲染模式切换
+  const handleToggleRenderMode = useCallback(() => {
     if (!sceneRef.current) return;
-    const axes = sceneRef.current.axesGroup;
-    axes.visible = !axes.visible;
-    setAxesVisible(axes.visible);
-  }, []);
+    const s = sceneRef.current;
+    const nextMode = renderMode === 'cinematic' ? 'classic' : 'cinematic';
+    setRenderMode(nextMode);
+
+    if (nextMode === 'classic') {
+      // 经典模式：关闭色调映射，移除 IBL，简化灯光，禁用 SSAO
+      s.renderer.toneMapping = THREE.NoToneMapping;
+      s.scene.environment = null;
+      s.keyLight.intensity = 1.0;
+      s.fillLight.intensity = 0.5;
+      s.rimLight.intensity = 0;
+      s.ambientLight.intensity = 0.6;
+      s.ssaoPass.enabled = false;
+
+      // 切换材质为经典 Lambert 风格
+      s.meshes.forEach((meshData) => {
+        meshData.material.transmission = 0;
+        meshData.material.thickness = 0;
+        meshData.material.clearcoat = 0;
+        meshData.material.ior = 1.5;
+        meshData.material.metalness = 0;
+        meshData.material.roughness = 0.8;
+        meshData.material.envMapIntensity = 0;
+        meshData.material.needsUpdate = true;
+      });
+    } else {
+      // 电影级模式：恢复所有高级渲染设置
+      s.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      s.scene.environment = s.envTexture;
+      s.keyLight.intensity = 1.2;
+      s.fillLight.intensity = 0.4;
+      s.rimLight.intensity = 0.3;
+      s.ambientLight.intensity = 0.3;
+      s.ssaoPass.enabled = true;
+
+      // 恢复材质为电影级物理材质
+      s.meshes.forEach((meshData) => {
+        const colorKey = meshData.name;
+        // 从模型配置中找对应的 color key
+        const config = models.find(m => m.name === colorKey);
+        const tissueParams = getTissueMaterialParams(config?.color || 'tissue');
+        const isTransparent = meshData.material.transparent;
+
+        meshData.material.transmission = isTransparent ? tissueParams.transmission * 0.5 : tissueParams.transmission;
+        meshData.material.thickness = tissueParams.thickness;
+        meshData.material.clearcoat = tissueParams.clearcoat;
+        meshData.material.clearcoatRoughness = tissueParams.clearcoatRoughness;
+        meshData.material.ior = tissueParams.ior;
+        meshData.material.metalness = tissueParams.metalness;
+        meshData.material.roughness = tissueParams.roughness;
+        meshData.material.envMapIntensity = 0.8;
+        meshData.material.needsUpdate = true;
+      });
+    }
+  }, [renderMode, models]);
 
   // 直接更新mesh属性函数
   const updateMeshProperties = useCallback(() => {
@@ -739,16 +805,20 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
         </button>
 
         <button
-          onClick={handleToggleAxes}
+          onClick={handleToggleRenderMode}
           className={`group flex flex-col items-center gap-1 w-[72px] py-2.5 rounded-xl border shadow-[0_2px_6px_rgba(0,0,0,0.08)] hover:shadow-[0_4px_12px_rgba(0,0,0,0.12)] active:scale-95 transition-all duration-200 ${
-            axesVisible
-              ? 'bg-gray-100 border-gray-300/80'
+            renderMode === 'cinematic'
+              ? 'bg-gradient-to-b from-gray-50 to-gray-100 border-gray-300/80'
               : 'bg-white border-gray-200/80 hover:border-gray-300'
           }`}
-          title={axesVisible ? '隐藏坐标' : '显示坐标'}
+          title={renderMode === 'cinematic' ? '切换为经典渲染' : '切换为电影级渲染'}
         >
-          <img src="/icon-axes.png" alt="显示坐标" className="w-6 h-6 object-contain" draggable={false} />
-          <span className="text-[10px] font-semibold text-slate-700 leading-tight">显示坐标</span>
+          <span className={`text-lg leading-none ${renderMode === 'cinematic' ? 'text-amber-500' : 'text-gray-400'}`}>
+            {renderMode === 'cinematic' ? '🎬' : '📐'}
+          </span>
+          <span className="text-[10px] font-semibold text-slate-700 leading-tight">
+            {renderMode === 'cinematic' ? '电影级' : '经典'}
+          </span>
         </button>
       </div>
       
