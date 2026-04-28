@@ -703,11 +703,11 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
     setRenderMode(nextMode);
 
     if (nextMode === 'classic') {
-      // 经典模式：关闭色调映射，移除 IBL，单光源，禁用 SSAO
+      // 经典模式：关闭色调映射，移除 IBL，简化灯光，禁用 SSAO
       s.renderer.toneMapping = THREE.NoToneMapping;
       s.scene.environment = null;
       s.keyLight.intensity = 1.0;
-      s.fillLight.intensity = 0;
+      s.fillLight.intensity = 0.5;
       s.rimLight.intensity = 0;
       s.ambientLight.intensity = 0.6;
       s.ssaoPass.enabled = false;
