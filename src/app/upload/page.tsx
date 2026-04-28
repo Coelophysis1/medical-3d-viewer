@@ -21,6 +21,8 @@ import { COLOR_MAP, COLOR_OPTIONS, COLOR_NAMES, ModelColor } from '@/types/medic
 const QRCode = dynamic(() => import('@/components/QRCode'), { ssr: false });
 
 const MAX_FILES = 50;
+const CHUNK_THRESHOLD = 8 * 1024 * 1024; // 超过 8MB 使用分块上传
+const CHUNK_SIZE = 5 * 1024 * 1024; // 每个分块 5MB
 
 interface UploadedFile {
   id: string;
@@ -84,6 +86,139 @@ export default function UploadPage() {
     window.location.href = '/login';
   };
 
+  /**
+   * 使用分块方式上传大文件
+   * 将文件切成 5MB 的块，逐块上传到 /api/upload/chunk
+   * 全部上传后调用 /api/upload/chunk (PUT) 合并
+   */
+  const uploadLargeFile = useCallback(async (
+    file: File,
+    index: number,
+  ): Promise<{ success: boolean; data?: UploadedFile; fileName?: string; error?: string }> => {
+    try {
+      const uploadId = `${Date.now()}-${Math.random().toString(36).substring(2, 10)}`;
+      const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+
+      // 逐块上传
+      for (let i = 0; i < totalChunks; i++) {
+        const start = i * CHUNK_SIZE;
+        const end = Math.min(start + CHUNK_SIZE, file.size);
+        const chunkBlob = file.slice(start, end);
+
+        const formData = new FormData();
+        formData.append('chunk', chunkBlob, file.name);
+        formData.append('uploadId', uploadId);
+        formData.append('chunkIndex', String(i));
+
+        const chunkResponse = await fetch('/api/upload/chunk', {
+          method: 'POST',
+          body: formData,
+        });
+
+        const chunkResult = await chunkResponse.json();
+        if (!chunkResult.success) {
+          // 上传失败，清理已上传的分块
+          try {
+            await fetch('/api/upload/chunk', {
+              method: 'DELETE',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ uploadId }),
+            });
+          } catch { /* ignore */ }
+          return { success: false, fileName: file.name, error: chunkResult.error || '分块上传失败' };
+        }
+
+        // 更新进度
+        setUploadProgress(prev => ({
+          ...prev,
+          current: index + (i + 1) / totalChunks,
+        }));
+      }
+
+      // 所有分块上传完成，请求合并
+      const completeResponse = await fetch('/api/upload/chunk', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          uploadId,
+          totalChunks,
+          fileName: file.name,
+          title,
+          department,
+          patientName,
+        }),
+      });
+
+      const completeResult = await completeResponse.json();
+
+      if (!completeResult.success) {
+        return { success: false, fileName: file.name, error: completeResult.error || '文件合并失败' };
+      }
+
+      return {
+        success: true,
+        data: {
+          id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          file,
+          name: file.name.replace(/\.stl$/i, ''),
+          color: COLOR_OPTIONS[index % COLOR_OPTIONS.length],
+          opacity: 100,
+          visible: true,
+          filePath: completeResult.file_path,
+          folderPrefix: completeResult.folder_prefix || '',
+        },
+      };
+    } catch (err) {
+      return { success: false, fileName: file.name, error: '网络错误' };
+    }
+  }, [title, department, patientName]);
+
+  /**
+   * 使用传统方式上传小文件（直接上传整个文件）
+   */
+  const uploadSmallFile = useCallback(async (
+    file: File,
+    index: number,
+  ): Promise<{ success: boolean; data?: UploadedFile; fileName?: string; error?: string }> => {
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('title', title);
+      formData.append('department', department);
+      formData.append('patientName', patientName);
+
+      const uploadResponse = await fetch('/api/upload', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const uploadResult = await uploadResponse.json();
+
+      // 更新进度
+      setUploadProgress(prev => ({ ...prev, current: index + 1 }));
+
+      if (uploadResult.success) {
+        return {
+          success: true,
+          data: {
+            id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+            file,
+            name: file.name.replace(/\.stl$/i, ''),
+            color: COLOR_OPTIONS[index % COLOR_OPTIONS.length],
+            opacity: 100,
+            visible: true,
+            filePath: uploadResult.file_path,
+            folderPrefix: uploadResult.folder_prefix || '',
+          },
+        };
+      } else {
+        return { success: false, fileName: file.name, error: uploadResult.error };
+      }
+    } catch (err) {
+      return { success: false, fileName: file.name, error: '网络错误' };
+    }
+  }, [title, department, patientName]);
+
   const handleFileUpload = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
     const uploadedFiles = event.target.files;
     if (!uploadedFiles || uploadedFiles.length === 0) return;
@@ -111,60 +246,22 @@ export default function UploadPage() {
     setUploadProgress({ current: 0, total: filesToUpload.length });
     setError('');
 
-    // 并行上传所有文件
-    const uploadPromises = filesToUpload.map(async (file, index) => {
-      try {
-        const formData = new FormData();
-        formData.append('file', file);
-        formData.append('title', title);
-        formData.append('department', department);
-        formData.append('patientName', patientName);
-
-        const uploadResponse = await fetch('/api/upload', {
-          method: 'POST',
-          body: formData,
-        });
-
-        const uploadResult = await uploadResponse.json();
-
-        // 更新进度
-        setUploadProgress(prev => ({ ...prev, current: index + 1 }));
-
-        if (uploadResult.success) {
-          return {
-            success: true,
-            data: {
-              id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-              file,
-              name: file.name.replace(/\.stl$/i, ''),
-              color: COLOR_OPTIONS[index % COLOR_OPTIONS.length],
-              opacity: 100,
-              visible: true,
-              filePath: uploadResult.file_path,
-              folderPrefix: uploadResult.folder_prefix || '',
-            },
-          };
-        } else {
-          return { success: false, fileName: file.name, error: uploadResult.error };
-        }
-      } catch (err) {
-        return { success: false, fileName: file.name, error: '网络错误' };
-      }
-    });
-
-    const results = await Promise.all(uploadPromises);
-
-    // 分类结果
+    // 逐个上传文件（大文件分块上传较慢，不适合并行）
     const successFiles: UploadedFile[] = [];
     const failedFiles: string[] = [];
 
-    results.forEach(result => {
-      if (result.success && 'data' in result && result.data) {
+    for (let i = 0; i < filesToUpload.length; i++) {
+      const file = filesToUpload[i];
+      const result = file.size > CHUNK_THRESHOLD
+        ? await uploadLargeFile(file, i)
+        : await uploadSmallFile(file, i);
+
+      if (result.success && result.data) {
         successFiles.push(result.data as UploadedFile);
-      } else if (!result.success && 'fileName' in result && result.fileName) {
+      } else if (!result.success && result.fileName) {
         failedFiles.push(result.fileName);
       }
-    });
+    }
 
     // 更新文件列表
     setFiles(prev => [...prev, ...successFiles]);
@@ -177,7 +274,7 @@ export default function UploadPage() {
     setIsUploading(false);
     setUploadProgress({ current: 0, total: 0 });
     event.target.value = '';
-  }, [files.length, title, department, patientName]);
+  }, [files.length, uploadLargeFile, uploadSmallFile]);
 
   const removeFile = async (id: string) => {
     const file = files.find(f => f.id === id);
@@ -477,7 +574,7 @@ export default function UploadPage() {
         <Card>
           <CardHeader>
             <CardTitle>模型文件上传</CardTitle>
-            <CardDescription>上传STL格式的三维模型文件，最多50个</CardDescription>
+            <CardDescription>上传STL格式的三维模型文件，最多50个。大文件（超过8MB）将自动使用分块上传</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
@@ -520,7 +617,8 @@ export default function UploadPage() {
                 <div className="flex items-center gap-3 p-3 bg-blue-50 rounded-lg">
                   <Loader2 className="w-5 h-5 text-blue-600 animate-spin" />
                   <span className="text-blue-700">
-                    正在上传文件 {uploadProgress.current}/{uploadProgress.total}...
+                    正在上传文件 {Math.min(Math.floor(uploadProgress.current) + 1, uploadProgress.total)}/{uploadProgress.total}
+                    {uploadProgress.current % 1 > 0 && ` (${Math.round((uploadProgress.current % 1) * 100)}%)`}
                   </span>
                 </div>
               )}
@@ -616,7 +714,7 @@ export default function UploadPage() {
                 <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center">
                   <FileBox className="w-12 h-12 mx-auto text-gray-400 mb-3" />
                   <p className="text-gray-500">点击上方按钮上传STL格式文件</p>
-                  <p className="text-sm text-gray-400 mt-1">支持同时上传多个文件</p>
+                  <p className="text-sm text-gray-400 mt-1">支持同时上传多个文件，大文件自动分块上传</p>
                 </div>
               )}
             </div>

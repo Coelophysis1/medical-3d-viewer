@@ -51,6 +51,9 @@
 │   │       ├── patient/          # 患者相关接口
 │   │       │   ├── verify/route.ts
 │   │       │   └── [id]/configs/route.ts
+│   │       ├── upload/           # 文件上传接口
+│   │       │   ├── route.ts              # POST 小文件上传 / DELETE 批量删除 / PATCH 重命名
+│   │       │   └── chunk/route.ts        # POST 分块上传 / PUT 合并分块 / DELETE 取消分块
 │   │       └── medical/
 │   │           └── config/
 │   │               ├── route.ts           # POST 创建配置
@@ -304,13 +307,37 @@
 ### 文件上传接口
 
 #### POST /api/upload
-上传STL文件
+上传STL文件（适用于8MB以内的文件）
 
 #### DELETE /api/upload
 批量删除文件
 
 #### PATCH /api/upload
 重命名文件夹
+
+#### POST /api/upload/chunk
+分块上传（适用于超过8MB的大文件）
+
+**请求体（FormData）：**
+```json
+{ "chunk": "<Blob>", "uploadId": "唯一上传ID", "chunkIndex": "0" }
+```
+
+#### PUT /api/upload/chunk
+完成分块上传，合并所有分块
+
+**请求体（JSON）：**
+```json
+{ "uploadId": "唯一上传ID", "totalChunks": 8, "fileName": "骨骼.stl", "title": "术前三维重建", "department": "骨科", "patientName": "张三" }
+```
+
+#### DELETE /api/upload/chunk
+取消/清理分块上传
+
+**请求体（JSON）：**
+```json
+{ "uploadId": "唯一上传ID" }
+```
 
 ## 模型颜色选项
 
