@@ -759,10 +759,10 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
       s.keyLight.position.set(-40, 60, 40);
       s.fillLight.position.set(30, 10, -50);
       s.rimLight.position.set(0, -30, -60);
-      s.keyLight.intensity = 1.2;
-      s.fillLight.intensity = 0.4;
-      s.rimLight.intensity = 0.3;
-      s.ambientLight.intensity = 0.3;
+      s.keyLight.intensity = 2.5;
+      s.fillLight.intensity = 0.8;
+      s.rimLight.intensity = 0.5;
+      s.ambientLight.intensity = 0.1;
       s.ssaoPass.enabled = true;
       s.smaaPass.enabled = true;
       s.wboitRenderer.setComposerEnabled(true);
@@ -782,7 +782,7 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
         meshData.material.ior = tissueParams.ior;
         meshData.material.metalness = tissueParams.metalness;
         meshData.material.roughness = tissueParams.roughness;
-        meshData.material.envMapIntensity = 0.8;
+        meshData.material.envMapIntensity = 0.3;
         meshData.material.needsUpdate = true;
       });
     }
