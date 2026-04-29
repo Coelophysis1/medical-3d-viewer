@@ -796,7 +796,7 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
         meshData.material.metalness = tissueParams.metalness;
         meshData.material.roughness = tissueParams.roughness;
         // envMapIntensity 大幅降低，让方向光主导明暗变化
-        meshData.material.envMapIntensity = 0.15;
+        meshData.material.envMapIntensity = 0.4;
         meshData.material.needsUpdate = true;
       });
     }
