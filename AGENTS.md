@@ -371,7 +371,7 @@
 | bleeding | 出血区 | #BC411C |
 | necrosis | 坏死区 | #D8BFD8 |
 | target_volume | 靶区 | #FFFF00 |
-| airway | 支气管/气道 | #99CCFF |
+| airway | 支气管/气道 | #AFD8F4 |
 
 ## 环境变量
 

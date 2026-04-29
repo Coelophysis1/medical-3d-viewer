@@ -93,7 +93,7 @@ export const COLOR_MAP: Record<ModelColor, string> = {
   bleeding: '#BC411C',
   necrosis: '#D8BFD8',
   target_volume: '#FFFF00',
-  airway: '#99CCFF',
+  airway: '#AFD8F4',
 };
 
 // 旧颜色名到新组织/器官颜色的兼容映射（用于已存在的旧数据）
