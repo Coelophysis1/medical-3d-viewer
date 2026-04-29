@@ -370,6 +370,8 @@
 | edema | 水肿区 | #8CE0E4 |
 | bleeding | 出血区 | #BC411C |
 | necrosis | 坏死区 | #D8BFD8 |
+| target_volume | 靶区 | #FFFF00 |
+| airway | 支气管/气道 | #99CCFF |
 
 ## 环境变量
 

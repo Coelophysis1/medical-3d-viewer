@@ -6,7 +6,8 @@ export type ModelColor =
   | 'mass' | 'muscle' | 'foreign_object' | 'teeth' | 'fat' | 'gray_matter'
   | 'white_matter' | 'nerve' | 'vein' | 'artery' | 'ligament' | 'tendon'
   | 'cartilage' | 'lymph_node' | 'lymphatic_vessel' | 'cerebrospinal_fluid'
-  | 'bile' | 'fluid' | 'edema' | 'bleeding' | 'necrosis';
+  | 'bile' | 'fluid' | 'edema' | 'bleeding' | 'necrosis'
+  | 'target_volume' | 'airway';
 
 export interface ModelConfig {
   id?: number;
@@ -91,6 +92,8 @@ export const COLOR_MAP: Record<ModelColor, string> = {
   edema: '#8CE0E4',
   bleeding: '#BC411C',
   necrosis: '#D8BFD8',
+  target_volume: '#FFFF00',
+  airway: '#99CCFF',
 };
 
 // 旧颜色名到新组织/器官颜色的兼容映射（用于已存在的旧数据）
@@ -157,6 +160,8 @@ export const COLOR_NAMES: Record<ModelColor, string> = {
   edema: '水肿区',
   bleeding: '出血区',
   necrosis: '坏死区',
+  target_volume: '靶区',
+  airway: '支气管/气道',
 };
 
 export const COLOR_OPTIONS: ModelColor[] = [
@@ -165,4 +170,5 @@ export const COLOR_OPTIONS: ModelColor[] = [
   'white_matter', 'nerve', 'vein', 'artery', 'ligament', 'tendon',
   'cartilage', 'lymph_node', 'lymphatic_vessel', 'cerebrospinal_fluid',
   'bile', 'fluid', 'edema', 'bleeding', 'necrosis',
+  'target_volume', 'airway',
 ];

@@ -146,6 +146,10 @@ function getTissueMaterialParams(colorKey: string): {
     necrosis:           { metalness: 0.0, roughness: 0.60, transmission: 0.05, thickness: 1.0, ior: 1.35, clearcoat: 0.0,  clearcoatRoughness: 0.5 },
     // 异物/植入物：金属或塑料质感
     foreign_object:     { metalness: 0.3, roughness: 0.20, transmission: 0.0,  thickness: 0.0, ior: 1.50, clearcoat: 0.5,  clearcoatRoughness: 0.1 },
+    // 靶区：明亮高亮，低透射
+    target_volume:      { metalness: 0.0, roughness: 0.30, transmission: 0.08, thickness: 1.0, ior: 1.33, clearcoat: 0.2,  clearcoatRoughness: 0.2 },
+    // 支气管/气道：管状中空结构，中等透射
+    airway:             { metalness: 0.0, roughness: 0.35, transmission: 0.15, thickness: 0.4, ior: 1.33, clearcoat: 0.25, clearcoatRoughness: 0.2 },
   };
 
   return tissueParams[colorKey] || tissueParams['tissue'];
