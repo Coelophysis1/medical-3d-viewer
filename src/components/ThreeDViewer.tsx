@@ -246,20 +246,21 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
     const ambientLight = new THREE.AmbientLight(0xffffff, 1.2);
     scene.add(ambientLight);
 
-    // 主方向光
+    // 灯光：挂载到相机，使光源始终跟随视角（左上方为主光方向）
     const keyLight = new THREE.DirectionalLight(0xffffff, 2.0);
-    keyLight.position.set(80, 120, 60);
-    scene.add(keyLight);
+    keyLight.position.set(-60, 80, 60); // 左上方
 
-    // 补光
     const fillLight = new THREE.DirectionalLight(0xc8d8e8, 1.0);
-    fillLight.position.set(-60, 40, -40);
-    scene.add(fillLight);
+    fillLight.position.set(40, 20, -60); // 右下方补光
 
-    // 边缘光
     const rimLight = new THREE.DirectionalLight(0xe8f0ff, 0.4);
-    rimLight.position.set(-20, -40, 80);
-    scene.add(rimLight);
+    rimLight.position.set(0, -40, -80); // 背面轮廓光
+
+    // 经典模式：灯光跟随相机；电影模式：灯光固定在场景
+    camera.add(keyLight);
+    camera.add(fillLight);
+    camera.add(rimLight);
+    scene.add(camera); // 相机加入场景，使子对象（灯光）渲染生效
 
     // ──────────────────────────────────────────────
     //  3. 后期处理管线：SSAO + OutputPass
@@ -718,10 +719,17 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
     setRenderMode(nextMode);
 
     if (nextMode === 'classic') {
-      // 经典模式：关闭色调映射，移除 IBL，简化灯光，禁用 SSAO，绕过 composer
+      // 经典模式：关闭色调映射，移除 IBL，灯光跟随相机，禁用 SSAO，绕过 composer
       s.renderer.toneMapping = THREE.NoToneMapping;
       s.renderer.toneMappingExposure = 1.2;
       s.scene.environment = null;
+      // 灯光挂载到相机，跟随视角旋转
+      s.camera.add(s.keyLight);
+      s.camera.add(s.fillLight);
+      s.camera.add(s.rimLight);
+      s.keyLight.position.set(-60, 80, 60);
+      s.fillLight.position.set(40, 20, -60);
+      s.rimLight.position.set(0, -40, -80);
       s.keyLight.intensity = 2.0;
       s.fillLight.intensity = 1.0;
       s.rimLight.intensity = 0.4;
@@ -742,10 +750,17 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
         meshData.material.needsUpdate = true;
       });
     } else {
-      // 电影级模式：恢复所有高级渲染设置，启用 composer
+      // 电影级模式：恢复所有高级渲染设置，灯光固定在场景，启用 composer
       s.renderer.toneMapping = THREE.ACESFilmicToneMapping;
       s.renderer.toneMappingExposure = 1.0;
       s.scene.environment = s.envTexture;
+      // 灯光挂载到场景，固定位置
+      s.scene.add(s.keyLight);
+      s.scene.add(s.fillLight);
+      s.scene.add(s.rimLight);
+      s.keyLight.position.set(80, 120, 60);
+      s.fillLight.position.set(-60, 40, -40);
+      s.rimLight.position.set(-20, -40, 80);
       s.keyLight.intensity = 1.2;
       s.fillLight.intensity = 0.4;
       s.rimLight.intensity = 0.3;
