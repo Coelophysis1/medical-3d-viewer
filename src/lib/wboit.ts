@@ -112,6 +112,7 @@ interface MaterialCacheEntry {
 export class WBOITRenderer {
   private renderer: THREE.WebGLRenderer;
   private composer: EffectComposer | null;
+  private useComposer: boolean = true;
 
   // Render targets
   private opaqueRT: THREE.WebGLRenderTarget | null = null;
@@ -418,6 +419,21 @@ export class WBOITRenderer {
   //  Render Pipeline
   // ──────────────────────────────────────────────
 
+  /**
+   * Enable or disable post-processing (EffectComposer) for the opaque pass.
+   * When disabled, the opaque pass uses renderer.render() directly,
+   * which preserves MSAA antialiasing from the WebGLRenderer.
+   * When enabled, the composer renders to a non-MSAA render target,
+   * so antialiasing relies on post-process AA (e.g. SMAA).
+   */
+  setComposerEnabled(enabled: boolean) {
+    if (this.useComposer === enabled) return;
+    this.useComposer = enabled;
+    // Force render target recreation to apply correct MSAA samples
+    this.width = 0;
+    this.height = 0;
+  }
+
   render(scene: THREE.Scene, camera: THREE.Camera) {
     const size = new THREE.Vector2();
     this.renderer.getSize(size);
@@ -437,9 +453,9 @@ export class WBOITRenderer {
       }
     });
 
-    // No transparent objects → use composer if available, else standard render
+    // No transparent objects → use composer if available AND enabled, else standard render
     if (transparentMeshes.length === 0) {
-      if (this.composer) {
+      if (this.composer && this.useComposer) {
         this.composer.render();
       } else {
         this.renderer.render(scene, camera);
@@ -608,8 +624,11 @@ export class WBOITRenderer {
     this.sharedDepthTexture.type = THREE.UnsignedIntType;
 
     // Opaque render target (RGBA16F) — Pass 1 writes color + depth here
+    // Use MSAA (samples=4) when composer is disabled for better antialiasing
+    const opaqueSamples = this.useComposer ? 0 : 4;
     this.opaqueRT = new THREE.WebGLRenderTarget(width, height, {
       type: THREE.HalfFloatType,
+      samples: opaqueSamples,
     });
     this.opaqueRT.depthTexture = this.sharedDepthTexture;
 
