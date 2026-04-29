@@ -1,18 +1,16 @@
 import * as THREE from 'three';
-import type { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 
 /**
  * WBOIT (Weighted Blended Order-Independent Transparency) Renderer
  *
  * Three-pass rendering pipeline for correct transparency in medical 3D viewers:
  *
- * Pass 1 — Opaque Pass:     depthTest=true,  depthWrite=true,  standard shader (+ optional post-processing via EffectComposer)
+ * Pass 1 — Opaque Pass:     depthTest=true,  depthWrite=true,  standard shader
  * Pass 2 — WBOIT Accumulation/Revealage: depthTest=true, depthWrite=false, WBOIT shader
  * Pass 3 — Compositing:     depthTest=false, depthWrite=false, full-screen quad
  *
  * Shader injection uses onBeforeCompile to inline WBOIT logic directly into
- * Three.js's material shaders (MeshPhongMaterial, MeshStandardMaterial, MeshPhysicalMaterial)
- * at the correct #include replacement points.
+ * Three.js's MeshPhongMaterial shader at the correct #include replacement points.
  * Variables like diffuseColor, outgoingLight, and mvPosition are in-scope at
  * those points, so no separate functions are needed.
  */
@@ -93,25 +91,18 @@ void main() {
 `;
 
 // ════════════════════════════════════════════════════════════════
-//  Type for material that supports onBeforeCompile
-// ════════════════════════════════════════════════════════════════
-
-type WBOITCompatibleMaterial = THREE.MeshPhongMaterial | THREE.MeshStandardMaterial | THREE.MeshPhysicalMaterial;
-
-interface MaterialCacheEntry {
-  accumMat: WBOITCompatibleMaterial;
-  revealMat: WBOITCompatibleMaterial;
-  accumUniforms: { uZNear: { value: number }; uZFar: { value: number } };
-  origMatRef: WBOITCompatibleMaterial;
-}
-
-// ════════════════════════════════════════════════════════════════
 //  WBOITRenderer
 // ════════════════════════════════════════════════════════════════
 
+interface MaterialCacheEntry {
+  accumMat: THREE.MeshPhongMaterial;
+  revealMat: THREE.MeshPhongMaterial;
+  accumUniforms: { uZNear: { value: number }; uZFar: { value: number } };
+  origMatRef: THREE.MeshPhongMaterial;
+}
+
 export class WBOITRenderer {
   private renderer: THREE.WebGLRenderer;
-  private composer: EffectComposer | null;
 
   // Render targets
   private opaqueRT: THREE.WebGLRenderTarget | null = null;
@@ -132,13 +123,8 @@ export class WBOITRenderer {
   private width = 0;
   private height = 0;
 
-  /**
-   * @param renderer The WebGL renderer
-   * @param composer Optional EffectComposer for post-processing on the opaque pass (SSAO, etc.)
-   */
-  constructor(renderer: THREE.WebGLRenderer, composer?: EffectComposer) {
+  constructor(renderer: THREE.WebGLRenderer) {
     this.renderer = renderer;
-    this.composer = composer ?? null;
 
     // Composite scene setup
     this.quadGeometry = new THREE.PlaneGeometry(2, 2);
@@ -165,10 +151,7 @@ export class WBOITRenderer {
 
   /**
    * Creates an onBeforeCompile callback that injects WBOIT accumulation
-   * logic into a material's shader program.
-   *
-   * Works with MeshPhongMaterial, MeshStandardMaterial, and MeshPhysicalMaterial.
-   * All these materials share the same #include replacement points.
+   * logic into a MeshPhongMaterial's shader program.
    *
    * Injection strategy:
    * - Declarations (varying, uniforms) are added after #include <common>
@@ -236,12 +219,6 @@ export class WBOITRenderer {
       shader.fragmentShader = shader.fragmentShader.replace(
         '#include <premultiplied_alpha_fragment>', ''
       );
-
-      // For MeshPhysicalMaterial: disable transmission/thickness
-      // (transmission pass renders geometry twice which conflicts with WBOIT)
-      shader.fragmentShader = shader.fragmentShader.replace(
-        '#include <transmission_fragment>', ''
-      );
     };
   }
 
@@ -274,11 +251,6 @@ export class WBOITRenderer {
     shader.fragmentShader = shader.fragmentShader.replace(
       '#include <premultiplied_alpha_fragment>', ''
     );
-
-    // For MeshPhysicalMaterial: disable transmission
-    shader.fragmentShader = shader.fragmentShader.replace(
-      '#include <transmission_fragment>', ''
-    );
   }
 
   // ──────────────────────────────────────────────
@@ -286,29 +258,22 @@ export class WBOITRenderer {
   // ──────────────────────────────────────────────
 
   private createAccumMaterial(
-    origMat: WBOITCompatibleMaterial,
+    origMat: THREE.MeshPhongMaterial,
     uniformData: { uZNear: { value: number }; uZFar: { value: number } }
-  ): WBOITCompatibleMaterial {
-    const mat = origMat.clone() as WBOITCompatibleMaterial;
+  ): THREE.MeshPhongMaterial {
+    const mat = origMat.clone();
     mat.transparent = true;
     mat.depthTest = true;
     mat.depthWrite = false;
     mat.blending = THREE.AdditiveBlending;
     mat.side = origMat.side;
-    // Disable physical material features that conflict with WBOIT
-    if (mat instanceof THREE.MeshPhysicalMaterial) {
-      mat.transmission = 0;
-      mat.thickness = 0;
-      mat.clearcoat = 0;
-      mat.ior = 1.5;
-    }
     mat.onBeforeCompile = WBOITRenderer.makeAccumOnBeforeCompile(uniformData);
     mat.needsUpdate = true;
     return mat;
   }
 
-  private createRevealMaterial(origMat: WBOITCompatibleMaterial): WBOITCompatibleMaterial {
-    const mat = origMat.clone() as WBOITCompatibleMaterial;
+  private createRevealMaterial(origMat: THREE.MeshPhongMaterial): THREE.MeshPhongMaterial {
+    const mat = origMat.clone();
     mat.transparent = true;
     mat.depthTest = true;
     mat.depthWrite = false;
@@ -316,13 +281,6 @@ export class WBOITRenderer {
     mat.blendSrc = THREE.ZeroFactor;
     mat.blendDst = THREE.OneMinusSrcAlphaFactor;
     mat.side = origMat.side;
-    // Disable physical material features that conflict with WBOIT
-    if (mat instanceof THREE.MeshPhysicalMaterial) {
-      mat.transmission = 0;
-      mat.thickness = 0;
-      mat.clearcoat = 0;
-      mat.ior = 1.5;
-    }
     mat.onBeforeCompile = WBOITRenderer.revealOnBeforeCompile;
     mat.needsUpdate = true;
     return mat;
@@ -330,10 +288,10 @@ export class WBOITRenderer {
 
   private getWBOITMaterials(
     mesh: THREE.Mesh,
-    origMat: WBOITCompatibleMaterial,
+    origMat: THREE.MeshPhongMaterial,
     sceneZNear: number,
     sceneZFar: number
-  ): { accumMat: WBOITCompatibleMaterial; revealMat: WBOITCompatibleMaterial } {
+  ): { accumMat: THREE.MeshPhongMaterial; revealMat: THREE.MeshPhongMaterial } {
     const cacheKey = mesh.uuid;
     const cached = this.materialCache.get(cacheKey);
 
@@ -429,7 +387,7 @@ export class WBOITRenderer {
 
     scene.traverse((child) => {
       if (child instanceof THREE.Mesh && child.visible) {
-        const mat = child.material as WBOITCompatibleMaterial;
+        const mat = child.material as THREE.MeshPhongMaterial;
         if (mat && mat.transparent && mat.opacity < 1.0) {
           transparentMeshes.push(child);
           transparentSet.add(child);
@@ -437,13 +395,9 @@ export class WBOITRenderer {
       }
     });
 
-    // No transparent objects → use composer if available, else standard render
+    // No transparent objects → standard render
     if (transparentMeshes.length === 0) {
-      if (this.composer) {
-        this.composer.render();
-      } else {
-        this.renderer.render(scene, camera);
-      }
+      this.renderer.render(scene, camera);
       return;
     }
 
@@ -468,7 +422,7 @@ export class WBOITRenderer {
       //  PASS 1: Opaque Pass
       //  depthTest: true, depthWrite: true
       //  Renders opaque objects + scene background to opaqueRT.
-      //  If composer is available, uses it for SSAO/post-processing.
+      //  The depth buffer now contains the Z of all opaque surfaces.
       // ════════════════════════════════════════════════════════════════
       transparentMeshes.forEach((m) => {
         m.visible = false;
@@ -480,30 +434,7 @@ export class WBOITRenderer {
       this.renderer.setRenderTarget(this.opaqueRT);
       this.renderer.setClearColor(0x000000, 0);
       this.renderer.clear(true, true, true); // Clear color + depth + stencil
-
-      if (this.composer) {
-        // Render opaque pass through composer (applies SSAO + output pass)
-        // But we need composer to write to our opaqueRT, not the screen
-        // We must temporarily redirect composer's render target
-        this.composer.render();
-        // Copy composer output to opaqueRT
-        // Actually, EffectComposer renders to its own writeBuffer.
-        // We need a different approach: render directly to opaqueRT first,
-        // then copy with post-processing.
-        // Simpler approach: render opaque with composer to screen, then copy.
-        // But that's complex. Let's use the simpler approach:
-        // Render directly without composer for opaque pass when WBOIT is active,
-        // and apply SSAO as a post-process on the composite result instead.
-        //
-        // Actually, the cleanest approach for WBOIT + SSAO:
-        // The SSAO pass needs the scene's depth and normal buffers.
-        // We can run SSAO on the opaqueRT result after Pass 1.
-        // For now, render opaque pass directly (without composer) when WBOIT is active.
-        // The SSAO effect will only apply to the no-transparent-objects case above.
-        this.renderer.render(scene, camera);
-      } else {
-        this.renderer.render(scene, camera);
-      }
+      this.renderer.render(scene, camera);
 
       transparentMeshes.forEach((m) => {
         m.visible = true;
@@ -524,9 +455,15 @@ export class WBOITRenderer {
 
       // ════════════════════════════════════════════════════════════════
       //  PASS 2a: WBOIT Accumulation
+      //  depthTest: true  (hardware: discards fragments behind opaque)
+      //  depthWrite: false
+      //  blending: Additive (ONE, ONE)
+      //
+      //  Accumulates: RGB = Σ(color_i × α_i × weight_i)
+      //               A   = Σ(α_i × weight_i)
       // ════════════════════════════════════════════════════════════════
       transparentMeshes.forEach((mesh) => {
-        const origMat = savedMaterials.get(mesh) as WBOITCompatibleMaterial;
+        const origMat = savedMaterials.get(mesh) as THREE.MeshPhongMaterial;
         const { accumMat } = this.getWBOITMaterials(mesh, origMat, sceneZNear, sceneZFar);
         mesh.material = accumMat;
       });
@@ -538,9 +475,14 @@ export class WBOITRenderer {
 
       // ════════════════════════════════════════════════════════════════
       //  PASS 2b: WBOIT Revealage
+      //  depthTest: true, depthWrite: false
+      //  blending: (ZERO, ONE_MINUS_SRC_ALPHA)
+      //
+      //  Result: revealage = Π(1 - α_i)
+      //  Starts at 1.0 (clear white), each fragment multiplies by (1-α).
       // ════════════════════════════════════════════════════════════════
       transparentMeshes.forEach((mesh) => {
-        const origMat = savedMaterials.get(mesh) as WBOITCompatibleMaterial;
+        const origMat = savedMaterials.get(mesh) as THREE.MeshPhongMaterial;
         const { revealMat } = this.getWBOITMaterials(mesh, origMat, sceneZNear, sceneZFar);
         mesh.material = revealMat;
       });
@@ -562,6 +504,8 @@ export class WBOITRenderer {
 
       // ════════════════════════════════════════════════════════════════
       //  PASS 3: Compositing
+      //  Full-screen quad: finalColor = opaque × revealage + accum.rgb / clamp(accum.a, 1e-5, 5e4)
+      //  depthTest: false, depthWrite: false
       // ════════════════════════════════════════════════════════════════
       this.compositeMaterial.uniforms.tOpaque.value = this.opaqueRT!.texture;
       this.compositeMaterial.uniforms.tAccum.value = this.accumRT!.texture;
