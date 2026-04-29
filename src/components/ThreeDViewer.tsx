@@ -169,6 +169,7 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
     gizmoAxes: THREE.Group;
     wboitRenderer: WBOITRenderer;
     composer: EffectComposer;
+    msaaRenderTarget: THREE.WebGLRenderTarget;
     ssaoPass: SSAOPass;
     animationId: number;
     // 渲染模式切换所需的引用
@@ -264,7 +265,14 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
     // ──────────────────────────────────────────────
     //  3. 后期处理管线：SSAO + OutputPass
     // ──────────────────────────────────────────────
-    const composer = new EffectComposer(renderer);
+    // MSAA 渲染目标：EffectComposer 的默认 WebGLRenderTarget 不支持 MSAA，
+    // 必须手动创建带 samples 的渲染目标传入，从源头消除锯齿
+    const msaaRenderTarget = new THREE.WebGLRenderTarget(
+      width * window.devicePixelRatio,
+      height * window.devicePixelRatio,
+      { type: THREE.HalfFloatType, samples: 4 }
+    );
+    const composer = new EffectComposer(renderer, msaaRenderTarget);
     const renderPass = new RenderPass(scene, camera);
     composer.addPass(renderPass);
 
@@ -277,12 +285,11 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
     ssaoPass.enabled = false;
     composer.addPass(ssaoPass);
 
-    // OutputPass：色调映射 + 颜色空间转换（替代手动 OutputPass）
+    // OutputPass：色调映射 + 颜色空间转换
     const outputPass = new OutputPass();
     composer.addPass(outputPass);
 
-    // SMAA 抗锯齿：EffectComposer 的渲染目标不继承 WebGLRenderer 的 antialias，
-    // 必须添加 SMAA 来消除锯齿（经典模式使用 renderer.render 直出，禁用 SMAA）
+    // SMAA 抗锯齿：经典模式使用 renderer.render 直出时禁用
     const smaaPass = new SMAAPass();
     smaaPass.enabled = false;
     composer.addPass(smaaPass);
@@ -376,6 +383,7 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
       gizmoAxes,
       wboitRenderer,
       composer,
+      msaaRenderTarget,
       ssaoPass,
       animationId: 0,
       envTexture,
@@ -464,6 +472,7 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
         sceneRef.current.wboitRenderer.dispose();
       }
       composer.dispose();
+      msaaRenderTarget.dispose();
       renderer.dispose();
       envTexture.dispose();
       if (container.contains(renderer.domElement)) {
