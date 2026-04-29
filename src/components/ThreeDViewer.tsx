@@ -9,6 +9,7 @@ import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { SSAOPass } from 'three/examples/jsm/postprocessing/SSAOPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
+import { SMAAPass } from 'three/examples/jsm/postprocessing/SMAAPass.js';
 import { getModelColor, ModelConfig, COLOR_MAP } from '@/types/medical';
 import { WBOITRenderer } from '@/lib/wboit';
 
@@ -174,6 +175,7 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
     ambientLight: THREE.AmbientLight;
     renderPass: RenderPass;
     outputPass: OutputPass;
+    smaaPass: SMAAPass;
   } | null>(null);
   // 手动保存初始相机状态，用于复位
   const savedCameraState = useRef<{
@@ -275,6 +277,11 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
     const outputPass = new OutputPass();
     composer.addPass(outputPass);
 
+    // SMAA 抗锯齿：EffectComposer 的渲染目标不继承 WebGLRenderer 的 antialias，
+    // 必须添加 SMAA 来消除锯齿（SMAAPass 自动检测渲染尺寸）
+    const smaaPass = new SMAAPass();
+    composer.addPass(smaaPass);
+
     // ──────────────────────────────────────────────
     //  4. 控制器
     // ──────────────────────────────────────────────
@@ -371,6 +378,7 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
       ambientLight,
       renderPass,
       outputPass,
+      smaaPass,
     };
 
     const animate = () => {
@@ -705,11 +713,12 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
     if (nextMode === 'classic') {
       // 经典模式：关闭色调映射，移除 IBL，简化灯光，禁用 SSAO
       s.renderer.toneMapping = THREE.NoToneMapping;
+      s.renderer.toneMappingExposure = 1.2;
       s.scene.environment = null;
-      s.keyLight.intensity = 1.0;
-      s.fillLight.intensity = 0.5;
-      s.rimLight.intensity = 0;
-      s.ambientLight.intensity = 0.6;
+      s.keyLight.intensity = 2.0;
+      s.fillLight.intensity = 1.0;
+      s.rimLight.intensity = 0.4;
+      s.ambientLight.intensity = 1.2;
       s.ssaoPass.enabled = false;
 
       // 切换材质为经典 Lambert 风格
@@ -726,6 +735,7 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
     } else {
       // 电影级模式：恢复所有高级渲染设置
       s.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      s.renderer.toneMappingExposure = 1.0;
       s.scene.environment = s.envTexture;
       s.keyLight.intensity = 1.2;
       s.fillLight.intensity = 0.4;
