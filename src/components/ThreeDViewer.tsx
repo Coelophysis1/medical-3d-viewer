@@ -180,6 +180,8 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
     renderPass: RenderPass;
     outputPass: OutputPass;
     smaaPass: SMAAPass;
+    renderMode: 'cinematic' | 'classic';
+    _iblEuler?: THREE.Euler;
   } | null>(null);
   // 手动保存初始相机状态，用于复位
   const savedCameraState = useRef<{
@@ -387,12 +389,24 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
       renderPass,
       outputPass,
       smaaPass,
+      renderMode: renderMode as 'cinematic' | 'classic',
     };
 
     const animate = () => {
       if (!sceneRef.current) return;
       sceneRef.current.animationId = requestAnimationFrame(animate);
       sceneRef.current.controls.update();
+
+      // 电影模式：IBL 环境贴图旋转跟随相机，使环境光方向始终对准屏幕方向
+      if (sceneRef.current.renderMode === 'cinematic') {
+        const cameraEuler = sceneRef.current._iblEuler || (sceneRef.current._iblEuler = new THREE.Euler());
+        cameraEuler.setFromQuaternion(camera.quaternion, 'YXZ');
+        sceneRef.current.meshes.forEach((meshData) => {
+          if (meshData.material.envMapRotation) {
+            meshData.material.envMapRotation.copy(cameraEuler);
+          }
+        });
+      }
 
       const w = container.clientWidth;
       const h = container.clientHeight;
@@ -717,6 +731,7 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
     const s = sceneRef.current;
     const nextMode = renderMode === 'cinematic' ? 'classic' : 'cinematic';
     setRenderMode(nextMode);
+    s.renderMode = nextMode;
 
     if (nextMode === 'classic') {
       // 经典模式：关闭色调映射，移除 IBL，灯光跟随相机，禁用 SSAO，绕过 composer
