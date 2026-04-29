@@ -242,22 +242,22 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
     // scene.environment = envTexture;
     pmremGenerator.dispose();
 
-    // 经典模式灯光：较强环境光 + 双方向光
-    const ambientLight = new THREE.AmbientLight(0xffffff, 1.2);
+    // 灯光：低环境光 + 强方向光，确保方向光跟随摄像机时有明显的明暗变化
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.3);
     scene.add(ambientLight);
 
-    // 主方向光
-    const keyLight = new THREE.DirectionalLight(0xffffff, 2.0);
+    // 主方向光（经典模式默认值，animate 中会跟随摄像机）
+    const keyLight = new THREE.DirectionalLight(0xffffff, 2.5);
     keyLight.position.set(80, 120, 60);
     scene.add(keyLight);
 
     // 补光
-    const fillLight = new THREE.DirectionalLight(0xc8d8e8, 1.0);
+    const fillLight = new THREE.DirectionalLight(0xc8d8e8, 0.8);
     fillLight.position.set(-60, 40, -40);
     scene.add(fillLight);
 
     // 边缘光
-    const rimLight = new THREE.DirectionalLight(0xe8f0ff, 0.4);
+    const rimLight = new THREE.DirectionalLight(0xe8f0ff, 0.6);
     rimLight.position.set(-20, -40, 80);
     scene.add(rimLight);
 
@@ -739,14 +739,14 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
     setRenderMode(nextMode);
 
     if (nextMode === 'classic') {
-      // 经典模式：关闭色调映射，移除 IBL，简化灯光，禁用 SSAO，绕过 composer
+      // 经典模式：关闭色调映射，移除 IBL，强方向光 + 低环境光
       s.renderer.toneMapping = THREE.NoToneMapping;
       s.renderer.toneMappingExposure = 1.2;
       s.scene.environment = null;
-      s.keyLight.intensity = 2.0;
-      s.fillLight.intensity = 1.0;
-      s.rimLight.intensity = 0.4;
-      s.ambientLight.intensity = 1.2;
+      s.keyLight.intensity = 2.5;
+      s.fillLight.intensity = 0.8;
+      s.rimLight.intensity = 0.6;
+      s.ambientLight.intensity = 0.3;
       s.ssaoPass.enabled = false;
       s.smaaPass.enabled = false;
       s.wboitRenderer.setComposerEnabled(false);
@@ -767,10 +767,10 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
       s.renderer.toneMapping = THREE.ACESFilmicToneMapping;
       s.renderer.toneMappingExposure = 1.0;
       s.scene.environment = s.envTexture;
-      s.keyLight.intensity = 1.2;
-      s.fillLight.intensity = 0.4;
-      s.rimLight.intensity = 0.3;
-      s.ambientLight.intensity = 0.3;
+      s.keyLight.intensity = 1.5;
+      s.fillLight.intensity = 0.5;
+      s.rimLight.intensity = 0.5;
+      s.ambientLight.intensity = 0.15;
       s.ssaoPass.enabled = true;
       s.smaaPass.enabled = true;
       s.wboitRenderer.setComposerEnabled(true);
@@ -790,7 +790,7 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
         meshData.material.ior = tissueParams.ior;
         meshData.material.metalness = tissueParams.metalness;
         meshData.material.roughness = tissueParams.roughness;
-        meshData.material.envMapIntensity = 0.8;
+        meshData.material.envMapIntensity = 0.4;
         meshData.material.needsUpdate = true;
       });
     }
