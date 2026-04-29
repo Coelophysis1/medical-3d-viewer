@@ -228,7 +228,7 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
 
     // 经典模式：无色调映射，曝光稍高
     renderer.toneMapping = THREE.NoToneMapping;
-    renderer.toneMappingExposure = 1.4;
+    renderer.toneMappingExposure = 1.6;
 
     container.appendChild(renderer.domElement);
 
@@ -746,7 +746,7 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
     if (nextMode === 'classic') {
       // 经典模式：关闭色调映射，移除 IBL，高亮度方向光 + 充足环境光
       s.renderer.toneMapping = THREE.NoToneMapping;
-      s.renderer.toneMappingExposure = 1.4;
+      s.renderer.toneMappingExposure = 1.6;
       s.scene.environment = null;
       s.keyLight.intensity = 3.0;
       s.fillLight.intensity = 1.5;
@@ -772,10 +772,10 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
       s.renderer.toneMapping = THREE.ACESFilmicToneMapping;
       s.renderer.toneMappingExposure = 1.0;
       s.scene.environment = s.envTexture;
-      s.keyLight.intensity = 1.5;
-      s.fillLight.intensity = 0.5;
-      s.rimLight.intensity = 0.5;
-      s.ambientLight.intensity = 0.15;
+      s.keyLight.intensity = 2.5;
+      s.fillLight.intensity = 0.6;
+      s.rimLight.intensity = 0.8;
+      s.ambientLight.intensity = 0.1;
       s.ssaoPass.enabled = true;
       s.smaaPass.enabled = true;
       s.wboitRenderer.setComposerEnabled(true);
@@ -795,7 +795,8 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
         meshData.material.ior = tissueParams.ior;
         meshData.material.metalness = tissueParams.metalness;
         meshData.material.roughness = tissueParams.roughness;
-        meshData.material.envMapIntensity = 0.4;
+        // envMapIntensity 大幅降低，让方向光主导明暗变化
+        meshData.material.envMapIntensity = 0.15;
         meshData.material.needsUpdate = true;
       });
     }
