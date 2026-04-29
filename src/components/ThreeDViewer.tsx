@@ -395,11 +395,13 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
 
       // 灯光跟随摄像机：主光始终在视角左上方，补光在右下方，轮廓光在后方
       const s = sceneRef.current;
+      // 从摄像机世界矩阵提取真实的局部坐标轴（而非 camera.up 固定参考轴）
       const camDir = new THREE.Vector3();
-      camera.getWorldDirection(camDir);
-      const camUp = camera.up.clone().normalize();
-      const camRight = new THREE.Vector3().crossVectors(camDir, camUp).normalize();
-      const camActualUp = new THREE.Vector3().crossVectors(camRight, camDir).normalize();
+      camera.getWorldDirection(camDir); // 前方向
+      const camRight = new THREE.Vector3();
+      camRight.setFromMatrixColumn(camera.matrixWorld, 0).normalize(); // 右方向
+      const camActualUp = new THREE.Vector3();
+      camActualUp.setFromMatrixColumn(camera.matrixWorld, 1).normalize(); // 上方向
 
       const lightDist = 150;
       // 主光：左上方（前方 + 左 + 上）
