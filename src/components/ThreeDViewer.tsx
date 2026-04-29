@@ -711,7 +711,7 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
     setRenderMode(nextMode);
 
     if (nextMode === 'classic') {
-      // 经典模式：关闭色调映射，移除 IBL，简化灯光，禁用 SSAO，绕过 composer
+      // 经典模式：关闭色调映射，移除 IBL，简化灯光，禁用 SSAO
       s.renderer.toneMapping = THREE.NoToneMapping;
       s.renderer.toneMappingExposure = 1.2;
       s.scene.environment = null;
@@ -720,8 +720,6 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
       s.rimLight.intensity = 0.4;
       s.ambientLight.intensity = 1.2;
       s.ssaoPass.enabled = false;
-      s.smaaPass.enabled = false;
-      s.wboitRenderer.setComposerEnabled(false);
 
       // 切换材质为经典 Lambert 风格
       s.meshes.forEach((meshData) => {
@@ -735,7 +733,7 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
         meshData.material.needsUpdate = true;
       });
     } else {
-      // 电影级模式：恢复所有高级渲染设置，启用 composer
+      // 电影级模式：恢复所有高级渲染设置
       s.renderer.toneMapping = THREE.ACESFilmicToneMapping;
       s.renderer.toneMappingExposure = 1.0;
       s.scene.environment = s.envTexture;
@@ -744,8 +742,6 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
       s.rimLight.intensity = 0.3;
       s.ambientLight.intensity = 0.3;
       s.ssaoPass.enabled = true;
-      s.smaaPass.enabled = true;
-      s.wboitRenderer.setComposerEnabled(true);
 
       // 恢复材质为电影级物理材质
       s.meshes.forEach((meshData) => {
