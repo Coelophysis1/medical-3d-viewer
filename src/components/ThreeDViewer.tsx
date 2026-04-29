@@ -4,18 +4,13 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import * as THREE from 'three';
 import { TrackballControls } from 'three/examples/jsm/controls/TrackballControls.js';
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
-import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
-import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
-import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
-import { SSAOPass } from 'three/examples/jsm/postprocessing/SSAOPass.js';
-import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
-import { getModelColor, ModelConfig, COLOR_MAP } from '@/types/medical';
+import { getModelColor, ModelConfig } from '@/types/medical';
 import { WBOITRenderer } from '@/lib/wboit';
 
 interface ModelMesh {
   name: string;
   mesh: THREE.Mesh;
-  material: THREE.MeshPhysicalMaterial;
+  material: THREE.MeshPhongMaterial;
   visible: boolean;
 }
 
@@ -93,63 +88,6 @@ function calculateVolume(geometry: THREE.BufferGeometry): number {
   return Math.abs(volume) / 6;
 }
 
-/**
- * 根据组织类型生成 MeshPhysicalMaterial 参数
- * 不同组织有不同的 Fake SSS (次表面散射) 特征
- */
-function getTissueMaterialParams(colorKey: string): {
-  metalness: number;
-  roughness: number;
-  transmission: number;
-  thickness: number;
-  ior: number;
-  clearcoat: number;
-  clearcoatRoughness: number;
-} {
-  // 根据颜色键（组织类型）返回物理参数
-  const tissueParams: Record<string, ReturnType<typeof getTissueMaterialParams>> = {
-    // 软组织类：较高透射，模拟光线穿透
-    tissue:             { metalness: 0.0, roughness: 0.45, transmission: 0.15, thickness: 1.0, ior: 1.33, clearcoat: 0.1, clearcoatRoughness: 0.3 },
-    organ:              { metalness: 0.0, roughness: 0.40, transmission: 0.20, thickness: 1.5, ior: 1.35, clearcoat: 0.15, clearcoatRoughness: 0.25 },
-    muscle:             { metalness: 0.0, roughness: 0.50, transmission: 0.10, thickness: 1.2, ior: 1.33, clearcoat: 0.05, clearcoatRoughness: 0.4 },
-    skin:               { metalness: 0.0, roughness: 0.55, transmission: 0.08, thickness: 0.8, ior: 1.33, clearcoat: 0.3,  clearcoatRoughness: 0.2 },
-    connective_tissue:  { metalness: 0.0, roughness: 0.40, transmission: 0.12, thickness: 0.6, ior: 1.35, clearcoat: 0.1,  clearcoatRoughness: 0.3 },
-    // 骨骼/牙齿类：低透射，较高粗糙度
-    bone:               { metalness: 0.0, roughness: 0.55, transmission: 0.02, thickness: 2.0, ior: 1.55, clearcoat: 0.05, clearcoatRoughness: 0.5 },
-    teeth:              { metalness: 0.0, roughness: 0.30, transmission: 0.03, thickness: 2.0, ior: 1.62, clearcoat: 0.4,  clearcoatRoughness: 0.15 },
-    cartilage:          { metalness: 0.0, roughness: 0.35, transmission: 0.08, thickness: 0.8, ior: 1.35, clearcoat: 0.2,  clearcoatRoughness: 0.25 },
-    // 血管类：较高透射模拟血液透光
-    blood:              { metalness: 0.0, roughness: 0.35, transmission: 0.18, thickness: 0.5, ior: 1.33, clearcoat: 0.2,  clearcoatRoughness: 0.2 },
-    artery:             { metalness: 0.0, roughness: 0.35, transmission: 0.18, thickness: 0.5, ior: 1.33, clearcoat: 0.2,  clearcoatRoughness: 0.2 },
-    vein:               { metalness: 0.0, roughness: 0.35, transmission: 0.20, thickness: 0.4, ior: 1.33, clearcoat: 0.2,  clearcoatRoughness: 0.2 },
-    // 神经系统：中等透射
-    nerve:              { metalness: 0.0, roughness: 0.40, transmission: 0.10, thickness: 0.5, ior: 1.40, clearcoat: 0.1,  clearcoatRoughness: 0.3 },
-    gray_matter:        { metalness: 0.0, roughness: 0.50, transmission: 0.10, thickness: 1.5, ior: 1.35, clearcoat: 0.05, clearcoatRoughness: 0.4 },
-    white_matter:       { metalness: 0.0, roughness: 0.45, transmission: 0.08, thickness: 1.5, ior: 1.35, clearcoat: 0.05, clearcoatRoughness: 0.4 },
-    // 韧带/肌腱：偏低透射
-    ligament:           { metalness: 0.0, roughness: 0.40, transmission: 0.06, thickness: 0.6, ior: 1.40, clearcoat: 0.15, clearcoatRoughness: 0.3 },
-    tendon:             { metalness: 0.0, roughness: 0.38, transmission: 0.06, thickness: 0.5, ior: 1.40, clearcoat: 0.15, clearcoatRoughness: 0.3 },
-    // 脂肪：较高透射，模拟半透明脂肪
-    fat:                { metalness: 0.0, roughness: 0.45, transmission: 0.25, thickness: 1.0, ior: 1.44, clearcoat: 0.1,  clearcoatRoughness: 0.3 },
-    // 淋巴系统：中等透射
-    lymph_node:         { metalness: 0.0, roughness: 0.45, transmission: 0.10, thickness: 0.8, ior: 1.35, clearcoat: 0.1,  clearcoatRoughness: 0.3 },
-    lymphatic_vessel:   { metalness: 0.0, roughness: 0.40, transmission: 0.12, thickness: 0.3, ior: 1.35, clearcoat: 0.1,  clearcoatRoughness: 0.3 },
-    // 体液类：高透射
-    cerebrospinal_fluid:{ metalness: 0.0, roughness: 0.10, transmission: 0.50, thickness: 0.5, ior: 1.33, clearcoat: 0.3,  clearcoatRoughness: 0.1 },
-    bile:               { metalness: 0.0, roughness: 0.15, transmission: 0.40, thickness: 0.5, ior: 1.33, clearcoat: 0.3,  clearcoatRoughness: 0.1 },
-    fluid:              { metalness: 0.0, roughness: 0.10, transmission: 0.45, thickness: 0.5, ior: 1.33, clearcoat: 0.3,  clearcoatRoughness: 0.1 },
-    // 病变类
-    mass:               { metalness: 0.0, roughness: 0.50, transmission: 0.12, thickness: 1.2, ior: 1.35, clearcoat: 0.1,  clearcoatRoughness: 0.3 },
-    edema:              { metalness: 0.0, roughness: 0.25, transmission: 0.30, thickness: 0.8, ior: 1.33, clearcoat: 0.2,  clearcoatRoughness: 0.2 },
-    bleeding:           { metalness: 0.0, roughness: 0.40, transmission: 0.15, thickness: 0.6, ior: 1.33, clearcoat: 0.15, clearcoatRoughness: 0.25 },
-    necrosis:           { metalness: 0.0, roughness: 0.60, transmission: 0.05, thickness: 1.0, ior: 1.35, clearcoat: 0.0,  clearcoatRoughness: 0.5 },
-    // 异物/植入物：金属或塑料质感
-    foreign_object:     { metalness: 0.3, roughness: 0.20, transmission: 0.0,  thickness: 0.0, ior: 1.50, clearcoat: 0.5,  clearcoatRoughness: 0.1 },
-  };
-
-  return tissueParams[colorKey] || tissueParams['tissue'];
-}
-
 export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<{
@@ -163,17 +101,7 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
     gizmoCamera: THREE.OrthographicCamera;
     gizmoAxes: THREE.Group;
     wboitRenderer: WBOITRenderer;
-    composer: EffectComposer;
-    ssaoPass: SSAOPass;
     animationId: number;
-    // 渲染模式切换所需的引用
-    envTexture: THREE.Texture;
-    keyLight: THREE.DirectionalLight;
-    fillLight: THREE.DirectionalLight;
-    rimLight: THREE.DirectionalLight;
-    ambientLight: THREE.AmbientLight;
-    renderPass: RenderPass;
-    outputPass: OutputPass;
   } | null>(null);
   // 手动保存初始相机状态，用于复位
   const savedCameraState = useRef<{
@@ -194,13 +122,13 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
   const centerDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // UI 控制状态
-  const [renderMode, setRenderMode] = useState<'cinematic' | 'classic'>('cinematic');
+  const [axesVisible, setAxesVisible] = useState(false);
   const [bgColorIndex, setBgColorIndex] = useState(2); // 0:黑 1:灰 2:白(默认)
   // 使用 useRef 避免每次渲染创建新数组
   const bgColorsRef = useRef(['#000000', '#808080', '#ffffff']);
   const bgLabelsRef = useRef(['黑', '灰', '白']);
 
-  // 创建场景的核心逻辑
+  // 创建场景的核心逻辑（不依赖 useCallback）
   const setupScene = useCallback((container: HTMLDivElement) => {
     const width = container.clientWidth;
     const height = container.clientHeight;
@@ -213,71 +141,22 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
     camera.position.set(200, 200, 200);
     camera.lookAt(0, 0, 0);
 
-    // ──────────────────────────────────────────────
-    //  1. 渲染器：电影级色调映射 + 物理光照
-    // ──────────────────────────────────────────────
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(width, height);
     renderer.setPixelRatio(window.devicePixelRatio);
-
-    // ACES Filmic 色调映射：防止高光过曝，色彩更沉稳
-    renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.0;
-
-    // 物理正确的灯光衰减（Three.js r163+ 默认已启用物理光照）
-
     container.appendChild(renderer.domElement);
 
-    // ──────────────────────────────────────────────
-    //  2. IBL 环境光（RoomEnvironment 虚拟摄影棚）
-    // ──────────────────────────────────────────────
-    const pmremGenerator = new THREE.PMREMGenerator(renderer);
-    pmremGenerator.compileEquirectangularShader();
-    const envTexture = pmremGenerator.fromScene(new RoomEnvironment(), 0.04).texture;
-    scene.environment = envTexture;
-    pmremGenerator.dispose();
-
-    // 保留低强度环境光作为补光
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.3);
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
     scene.add(ambientLight);
 
-    // 主方向光：模拟手术灯
-    const keyLight = new THREE.DirectionalLight(0xffffff, 1.2);
-    keyLight.position.set(80, 120, 60);
-    scene.add(keyLight);
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+    directionalLight.position.set(100, 100, 50);
+    scene.add(directionalLight);
 
-    // 补光：减少硬阴影
-    const fillLight = new THREE.DirectionalLight(0xc8d8e8, 0.4);
-    fillLight.position.set(-60, 40, -40);
-    scene.add(fillLight);
+    const directionalLight2 = new THREE.DirectionalLight(0xffffff, 0.4);
+    directionalLight2.position.set(-50, -50, -50);
+    scene.add(directionalLight2);
 
-    // 边缘光：增强轮廓
-    const rimLight = new THREE.DirectionalLight(0xe8f0ff, 0.3);
-    rimLight.position.set(-20, -40, 80);
-    scene.add(rimLight);
-
-    // ──────────────────────────────────────────────
-    //  3. 后期处理管线：SSAO + OutputPass
-    // ──────────────────────────────────────────────
-    const composer = new EffectComposer(renderer);
-    const renderPass = new RenderPass(scene, camera);
-    composer.addPass(renderPass);
-
-    // SSAO 环境光遮蔽：加深沟壑阴影，增强立体感
-    const ssaoPass = new SSAOPass(scene, camera, width, height);
-    ssaoPass.kernelRadius = 16;
-    ssaoPass.minDistance = 0.001;
-    ssaoPass.maxDistance = 0.1;
-    ssaoPass.output = SSAOPass.OUTPUT.Default;
-    composer.addPass(ssaoPass);
-
-    // OutputPass：色调映射 + 颜色空间转换（替代手动 OutputPass）
-    const outputPass = new OutputPass();
-    composer.addPass(outputPass);
-
-    // ──────────────────────────────────────────────
-    //  4. 控制器
-    // ──────────────────────────────────────────────
     const controls = new TrackballControls(camera, renderer.domElement);
     controls.rotateSpeed = 2.0;
     controls.zoomSpeed = 1.2;
@@ -287,9 +166,7 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
     controls.staticMoving = false;
     controls.dynamicDampingFactor = 0.15;
 
-    // ──────────────────────────────────────────────
-    //  5. 坐标轴 + Orientation Gizmo
-    // ──────────────────────────────────────────────
+    // 添加XYZ坐标轴（箭头），默认隐藏
     const axesGroup = new THREE.Group();
     const axisLen = 40;
     const headLen = axisLen * 0.15;
@@ -300,10 +177,12 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
     axesGroup.visible = false;
     scene.add(axesGroup);
 
-    const gizmoViewPx = 130;
-    const gizmoFrustum = 80;
+    // --- Orientation Gizmo（左下角坐标轴指示器）---
+    const gizmoViewPx = 130; // 视口像素尺寸
+    const gizmoFrustum = 80; // 正交相机半视锥（世界单位）
     const gizmoScene = new THREE.Scene();
 
+    // 正交相机始终固定，位置 & 朝向不变 → 原心永远居中
     const gizmoCamera = new THREE.OrthographicCamera(
       -gizmoFrustum, gizmoFrustum,
       gizmoFrustum, -gizmoFrustum,
@@ -312,6 +191,7 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
     gizmoCamera.position.set(0, 0, 300);
     gizmoCamera.lookAt(0, 0, 0);
 
+    // Gizmo 坐标轴组：箭头 + 轴端文字精灵
     const gLen = 50;
     const gHeadLen = gLen * 0.2;
     const gHeadWidth = gLen * 0.12;
@@ -321,6 +201,7 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
     gizmoAxes.add(new THREE.ArrowHelper(new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, 0, 0), gLen, 0x3B82F6, gHeadLen, gHeadWidth));
     gizmoScene.add(gizmoAxes);
 
+    // 轴端文字标签精灵
     const makeLabel = (text: string, color: string, position: THREE.Vector3) => {
       const canvas = document.createElement('canvas');
       canvas.width = 64;
@@ -342,13 +223,11 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
     gizmoAxes.add(makeLabel('Y', '#22C55E', new THREE.Vector3(0, gLen + 14, 0)));
     gizmoAxes.add(makeLabel('Z', '#3B82F6', new THREE.Vector3(0, 0, gLen + 14)));
 
-    // 禁用自动清除
+    // 禁用自动清除，以便同一 Canvas 上绘制两次
     renderer.autoClear = false;
 
-    // ──────────────────────────────────────────────
-    //  6. WBOIT 渲染器（传入 composer 用于不透明通道后期处理）
-    // ──────────────────────────────────────────────
-    const wboitRenderer = new WBOITRenderer(renderer, composer);
+    // WBOIT (Order-Independent Transparency) 渲染器
+    const wboitRenderer = new WBOITRenderer(renderer);
 
     sceneRef.current = {
       scene,
@@ -361,16 +240,7 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
       gizmoCamera,
       gizmoAxes,
       wboitRenderer,
-      composer,
-      ssaoPass,
       animationId: 0,
-      envTexture,
-      keyLight,
-      fillLight,
-      rimLight,
-      ambientLight,
-      renderPass,
-      outputPass,
     };
 
     const animate = () => {
@@ -384,11 +254,14 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
       // 清除整个画布
       sceneRef.current.renderer.clear();
 
-      // 1. 渲染主场景 — WBOIT 内部使用 composer 处理不透明通道的 SSAO
+      // 1. 渲染主场景（全屏视口）— 使用 WBOIT 实现顺序无关透明度
       sceneRef.current.renderer.setViewport(0, 0, w, h);
       sceneRef.current.wboitRenderer.render(scene, camera);
 
       // 2. 渲染 Gizmo（左下角独立区域）
+      //    关键：gizmoCamera 始终固定不动，原心永远在视口正中
+      //    仅将主相机的旋转反向应用到 gizmoAxes 组，使其反映当前视角
+      //    平移和缩放不会改变主相机的 quaternion，因此 gizmo 天然免疫
       sceneRef.current.renderer.setScissorTest(true);
       sceneRef.current.renderer.setViewport(0, 0, gizmoViewPx, gizmoViewPx);
       sceneRef.current.renderer.setScissor(0, 0, gizmoViewPx, gizmoViewPx);
@@ -409,9 +282,6 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
       sceneRef.current.camera.aspect = newWidth / newHeight;
       sceneRef.current.camera.updateProjectionMatrix();
       sceneRef.current.renderer.setSize(newWidth, newHeight);
-      sceneRef.current.composer.setSize(newWidth, newHeight);
-      // SSAOPass 需要更新分辨率
-      sceneRef.current.ssaoPass.setSize(newWidth, newHeight);
     };
 
     window.addEventListener('resize', handleResize);
@@ -422,9 +292,7 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
         cancelAnimationFrame(sceneRef.current.animationId);
         sceneRef.current.wboitRenderer.dispose();
       }
-      composer.dispose();
       renderer.dispose();
-      envTexture.dispose();
       if (container.contains(renderer.domElement)) {
         container.removeChild(renderer.domElement);
       }
@@ -436,11 +304,13 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
     const container = containerRef.current;
     if (!container) return;
 
+    // 如果容器已有尺寸，直接初始化
     if (container.clientWidth > 0 && container.clientHeight > 0) {
       const cleanup = setupScene(container);
       return cleanup || undefined;
     }
 
+    // 容器尺寸为0，轮询等待
     let cleanupFn: (() => void) | null | undefined = null;
     const pollTimer = setInterval(() => {
       if (container.clientWidth > 0 && container.clientHeight > 0) {
@@ -477,8 +347,9 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
     const loadModels = async () => {
       const { scene, meshes: existingMeshes } = sceneRef.current!;
 
-      // 清理旧模型
+      // 清理旧模型（包括可能的背面子mesh）
       existingMeshes.forEach(m => {
+        // 移除子mesh（背面mesh等）
         while (m.mesh.children.length > 0) {
           const child = m.mesh.children[0];
           m.mesh.remove(child);
@@ -504,11 +375,13 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
         const config = models[i];
         
         try {
+          // 判断文件来源：s3:// 开头则通过代理API获取，否则直接使用本地路径
           const fileUrl = config.file_path.startsWith('s3://')
             ? `/api/file?key=${encodeURIComponent(config.file_path)}`
             : `/${config.file_path}`;
           let geometry: THREE.BufferGeometry;
           
+          // 单次fetch获取ArrayBuffer，从缓冲区判断格式，避免重复下载
           const response = await fetch(fileUrl);
           if (!response.ok) {
             throw new Error(`文件加载失败: ${response.status} ${response.statusText}`);
@@ -516,6 +389,7 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
           const arrayBuffer = await response.arrayBuffer();
           const uint8 = new Uint8Array(arrayBuffer);
           
+          // 检测ASCII STL：前几个字节解码后以"solid"开头
           const headerText = new TextDecoder().decode(uint8.slice(0, 80));
           if (headerText.trim().startsWith('solid')) {
             const text = new TextDecoder().decode(uint8);
@@ -526,33 +400,13 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
           }
           
           const isTransparent = config.opacity < 100;
-          const colorValue = getModelColor(config.color);
-          const tissueParams = getTissueMaterialParams(config.color);
 
-          // ──────────────────────────────────────────────
-          //  MeshPhysicalMaterial + Fake SSS
-          // ──────────────────────────────────────────────
-          const material = new THREE.MeshPhysicalMaterial({
-            color: new THREE.Color(colorValue),
+          const material = new THREE.MeshPhongMaterial({
+            color: new THREE.Color(getModelColor(config.color)),
             transparent: isTransparent,
             opacity: isTransparent ? config.opacity / 100 : 1,
+            shininess: 30,
             side: THREE.DoubleSide,
-
-            // 物理材质参数（基于组织类型）
-            metalness: tissueParams.metalness,
-            roughness: tissueParams.roughness,
-
-            // Fake SSS：透射 + 厚度 + 折射率
-            transmission: isTransparent ? tissueParams.transmission * 0.5 : tissueParams.transmission,
-            thickness: tissueParams.thickness,
-            ior: tissueParams.ior,
-
-            // 清漆效果：模拟器官表面湿润感
-            clearcoat: tissueParams.clearcoat,
-            clearcoatRoughness: tissueParams.clearcoatRoughness,
-
-            // 环境光影响强度
-            envMapIntensity: 0.8,
           });
 
           const mesh = new THREE.Mesh(geometry, material);
@@ -572,19 +426,12 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
         } catch (err) {
           console.error(`处理模型 ${config.name} 失败:`, err);
           const placeholderGeo = new THREE.BoxGeometry(30, 40, 50);
-          const tissueParams = getTissueMaterialParams(config.color);
-          const material = new THREE.MeshPhysicalMaterial({
+          const material = new THREE.MeshPhongMaterial({
             color: new THREE.Color(getModelColor(config.color)),
             transparent: true,
             opacity: 0.5,
+            shininess: 30,
             side: THREE.DoubleSide,
-            metalness: tissueParams.metalness,
-            roughness: tissueParams.roughness,
-            transmission: tissueParams.transmission,
-            thickness: tissueParams.thickness,
-            ior: tissueParams.ior,
-            clearcoat: tissueParams.clearcoat,
-            clearcoatRoughness: tissueParams.clearcoatRoughness,
           });
           const mesh = new THREE.Mesh(placeholderGeo, material);
           mesh.name = config.name;
@@ -613,6 +460,7 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
       const centerAndFitCamera = () => {
         if (!sceneRef.current || newMeshes.length === 0) return;
 
+        // 1. 计算所有模型的合并包围盒
         const box = new THREE.Box3();
         newMeshes.forEach(m => box.expandByObject(m.mesh));
         const center = box.getCenter(new THREE.Vector3());
@@ -621,6 +469,7 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
 
         if (maxDim === 0) return;
 
+        // 2. 缩放到合理尺寸并平移到原点
         const targetSize = 100;
         const scale = targetSize / maxDim;
         newMeshes.forEach(m => {
@@ -628,19 +477,24 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
           m.mesh.scale.setScalar(scale);
         });
 
+        // 3. 重新计算缩放后的包围盒，获取真实几何中心
         const scaledBox = new THREE.Box3();
         newMeshes.forEach(m => scaledBox.expandByObject(m.mesh));
         const scaledCenter = scaledBox.getCenter(new THREE.Vector3());
         const scaledSize = scaledBox.getSize(new THREE.Vector3());
         const scaledMaxDim = Math.max(scaledSize.x, scaledSize.y, scaledSize.z);
 
+        // 4. 基于相机 FOV 精确计算距离，确保模型完整出现在视口内
         const camera = sceneRef.current!.camera;
         const fovRad = (camera.fov * Math.PI) / 180;
         const aspect = camera.aspect;
+        // 垂直方向所需距离
         const distV = scaledMaxDim / (2 * Math.tan(fovRad / 2));
+        // 水平方向所需距离
         const distH = scaledMaxDim / (2 * Math.tan(fovRad / 2) * aspect);
-        const fitDistance = Math.max(distV, distH) * 1.5;
+        const fitDistance = Math.max(distV, distH) * 1.5; // 1.5 留边距
 
+        // 5. 设置相机位置：方位角45°，仰角30°
         const azimuth = Math.PI / 4;
         const elevation = Math.PI / 6;
 
@@ -652,9 +506,11 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
         camera.lookAt(scaledCenter);
         camera.updateProjectionMatrix();
 
+        // 6. 将 OrbitControls 的 target 设为几何中心
         sceneRef.current!.controls.target.copy(scaledCenter);
         sceneRef.current!.controls.update();
 
+        // 7. 保存当前状态为初始状态，供「复位」按钮使用
         savedCameraState.current = {
           position: camera.position.clone(),
           up: camera.up.clone(),
@@ -662,6 +518,7 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
         };
       };
 
+      // 防抖：100ms 后执行一次，避免模型加载过程中频繁刷新
       if (centerDebounceRef.current) {
         clearTimeout(centerDebounceRef.current);
       }
@@ -684,7 +541,7 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
     sceneRef.current.camera.updateProjectionMatrix();
   }, []);
 
-  // 背景切换
+  // 背景切换：黑 → 灰 → 白 循环
   const handleToggleBackground = useCallback(() => {
     if (!sceneRef.current) return;
     const bgColors = bgColorsRef.current;
@@ -695,68 +552,18 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
     });
   }, []);
 
-  // 渲染模式切换
-  const handleToggleRenderMode = useCallback(() => {
+  // 坐标轴切换
+  const handleToggleAxes = useCallback(() => {
     if (!sceneRef.current) return;
-    const s = sceneRef.current;
-    const nextMode = renderMode === 'cinematic' ? 'classic' : 'cinematic';
-    setRenderMode(nextMode);
-
-    if (nextMode === 'classic') {
-      // 经典模式：关闭色调映射，移除 IBL，简化灯光，禁用 SSAO
-      s.renderer.toneMapping = THREE.NoToneMapping;
-      s.scene.environment = null;
-      s.keyLight.intensity = 1.0;
-      s.fillLight.intensity = 0.5;
-      s.rimLight.intensity = 0;
-      s.ambientLight.intensity = 0.6;
-      s.ssaoPass.enabled = false;
-
-      // 切换材质为经典 Lambert 风格
-      s.meshes.forEach((meshData) => {
-        meshData.material.transmission = 0;
-        meshData.material.thickness = 0;
-        meshData.material.clearcoat = 0;
-        meshData.material.ior = 1.5;
-        meshData.material.metalness = 0;
-        meshData.material.roughness = 0.8;
-        meshData.material.envMapIntensity = 0;
-        meshData.material.needsUpdate = true;
-      });
-    } else {
-      // 电影级模式：恢复所有高级渲染设置
-      s.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-      s.scene.environment = s.envTexture;
-      s.keyLight.intensity = 1.2;
-      s.fillLight.intensity = 0.4;
-      s.rimLight.intensity = 0.3;
-      s.ambientLight.intensity = 0.3;
-      s.ssaoPass.enabled = true;
-
-      // 恢复材质为电影级物理材质
-      s.meshes.forEach((meshData) => {
-        const colorKey = meshData.name;
-        // 从模型配置中找对应的 color key
-        const config = models.find(m => m.name === colorKey);
-        const tissueParams = getTissueMaterialParams(config?.color || 'tissue');
-        const isTransparent = meshData.material.transparent;
-
-        meshData.material.transmission = isTransparent ? tissueParams.transmission * 0.5 : tissueParams.transmission;
-        meshData.material.thickness = tissueParams.thickness;
-        meshData.material.clearcoat = tissueParams.clearcoat;
-        meshData.material.clearcoatRoughness = tissueParams.clearcoatRoughness;
-        meshData.material.ior = tissueParams.ior;
-        meshData.material.metalness = tissueParams.metalness;
-        meshData.material.roughness = tissueParams.roughness;
-        meshData.material.envMapIntensity = 0.8;
-        meshData.material.needsUpdate = true;
-      });
-    }
-  }, [renderMode, models]);
+    const axes = sceneRef.current.axesGroup;
+    axes.visible = !axes.visible;
+    setAxesVisible(axes.visible);
+  }, []);
 
   // 直接更新mesh属性函数
   const updateMeshProperties = useCallback(() => {
     if (!sceneRef.current || sceneRef.current.meshes.length === 0) return;
+    // WBOIT handles transparency automatically — just update material properties
     sceneRef.current.meshes.forEach((meshData, index) => {
       const config = models[index];
       if (!config) return;
@@ -786,6 +593,7 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
         onPointerDown={(e) => e.stopPropagation()}
         onClick={(e) => e.stopPropagation()}
       >
+        {/* 按钮1：复位视角 */}
         <button
           onClick={handleReset}
           className="group flex flex-col items-center gap-1 w-[72px] py-2.5 rounded-xl bg-white border border-gray-200/80 shadow-[0_2px_6px_rgba(0,0,0,0.08)] hover:shadow-[0_4px_12px_rgba(0,0,0,0.12)] hover:border-gray-300 active:scale-95 transition-all duration-200"
@@ -795,6 +603,7 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
           <span className="text-[10px] font-semibold text-slate-700 leading-tight">复位视角</span>
         </button>
 
+        {/* 按钮2：切换背景 */}
         <button
           onClick={handleToggleBackground}
           className="group flex flex-col items-center gap-1 w-[72px] py-2.5 rounded-xl bg-white border border-gray-200/80 shadow-[0_2px_6px_rgba(0,0,0,0.08)] hover:shadow-[0_4px_12px_rgba(0,0,0,0.12)] hover:border-gray-300 active:scale-95 transition-all duration-200"
@@ -804,21 +613,18 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
           <span className="text-[10px] font-semibold text-slate-700 leading-tight">切换背景</span>
         </button>
 
+        {/* 按钮3：显示坐标 */}
         <button
-          onClick={handleToggleRenderMode}
+          onClick={handleToggleAxes}
           className={`group flex flex-col items-center gap-1 w-[72px] py-2.5 rounded-xl border shadow-[0_2px_6px_rgba(0,0,0,0.08)] hover:shadow-[0_4px_12px_rgba(0,0,0,0.12)] active:scale-95 transition-all duration-200 ${
-            renderMode === 'cinematic'
-              ? 'bg-gradient-to-b from-gray-50 to-gray-100 border-gray-300/80'
+            axesVisible
+              ? 'bg-gray-100 border-gray-300/80'
               : 'bg-white border-gray-200/80 hover:border-gray-300'
           }`}
-          title={renderMode === 'cinematic' ? '切换为经典渲染' : '切换为电影级渲染'}
+          title={axesVisible ? '隐藏坐标' : '显示坐标'}
         >
-          <span className={`text-lg leading-none ${renderMode === 'cinematic' ? 'text-amber-500' : 'text-gray-400'}`}>
-            {renderMode === 'cinematic' ? '🎬' : '📐'}
-          </span>
-          <span className="text-[10px] font-semibold text-slate-700 leading-tight">
-            {renderMode === 'cinematic' ? '电影级' : '经典'}
-          </span>
+          <img src="/icon-axes.png" alt="显示坐标" className="w-6 h-6 object-contain" draggable={false} />
+          <span className="text-[10px] font-semibold text-slate-700 leading-tight">显示坐标</span>
         </button>
       </div>
       
