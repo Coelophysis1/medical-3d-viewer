@@ -392,10 +392,13 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
       if (!sceneRef.current) return;
       sceneRef.current.animationId = requestAnimationFrame(animate);
       sceneRef.current.controls.update();
+      // 确保 camera.matrixWorld 在 controls.update() 后同步更新
+      // （renderer.render() 会自动更新，但我们需要在 render 之前读取矩阵）
+      camera.updateMatrixWorld(true);
 
       // 灯光跟随摄像机：主光始终在视角左上方，补光在右下方，轮廓光在后方
       const s = sceneRef.current;
-      // 从摄像机世界矩阵提取真实的局部坐标轴（而非 camera.up 固定参考轴）
+      // 从摄像机世界矩阵提取真实的局部坐标轴
       const camDir = new THREE.Vector3();
       camera.getWorldDirection(camDir); // 前方向
       const camRight = new THREE.Vector3();
