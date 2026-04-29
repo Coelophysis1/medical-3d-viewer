@@ -750,17 +750,15 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
         meshData.material.needsUpdate = true;
       });
     } else {
-      // 电影级模式：恢复所有高级渲染设置，灯光固定在场景，启用 composer
+      // 电影级模式：恢复所有高级渲染设置，灯光同样跟随相机，启用 composer
       s.renderer.toneMapping = THREE.ACESFilmicToneMapping;
       s.renderer.toneMappingExposure = 1.0;
       s.scene.environment = s.envTexture;
-      // 灯光挂载到场景，固定位置
-      s.scene.add(s.keyLight);
-      s.scene.add(s.fillLight);
-      s.scene.add(s.rimLight);
-      s.keyLight.position.set(80, 120, 60);
-      s.fillLight.position.set(-60, 40, -40);
-      s.rimLight.position.set(-20, -40, 80);
+      // 灯光保持挂载在相机上，跟随视角旋转
+      // 电影模式 IBL 提供基础照明，辅助光更柔和
+      s.keyLight.position.set(-40, 60, 40);
+      s.fillLight.position.set(30, 10, -50);
+      s.rimLight.position.set(0, -30, -60);
       s.keyLight.intensity = 1.2;
       s.fillLight.intensity = 0.4;
       s.rimLight.intensity = 0.3;
