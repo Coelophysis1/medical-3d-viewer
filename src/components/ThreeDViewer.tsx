@@ -393,6 +393,27 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
       sceneRef.current.animationId = requestAnimationFrame(animate);
       sceneRef.current.controls.update();
 
+      // 灯光跟随摄像机：主光始终在视角左上方，补光在右下方，轮廓光在后方
+      const s = sceneRef.current;
+      const camDir = new THREE.Vector3();
+      camera.getWorldDirection(camDir);
+      const camUp = camera.up.clone().normalize();
+      const camRight = new THREE.Vector3().crossVectors(camDir, camUp).normalize();
+      const camActualUp = new THREE.Vector3().crossVectors(camRight, camDir).normalize();
+
+      const lightDist = 150;
+      // 主光：左上方（前方 + 左 + 上）
+      s.keyLight.position.copy(camDir).multiplyScalar(lightDist)
+        .add(camRight.clone().multiplyScalar(-lightDist * 0.5))
+        .add(camActualUp.clone().multiplyScalar(lightDist * 0.8));
+      // 补光：右下方（前方 + 右 + 下）
+      s.fillLight.position.copy(camDir).multiplyScalar(lightDist * 0.6)
+        .add(camRight.clone().multiplyScalar(lightDist * 0.4))
+        .add(camActualUp.clone().multiplyScalar(-lightDist * 0.3));
+      // 轮廓光：后方偏上
+      s.rimLight.position.copy(camDir).multiplyScalar(-lightDist)
+        .add(camActualUp.clone().multiplyScalar(lightDist * 0.3));
+
       const w = container.clientWidth;
       const h = container.clientHeight;
 
