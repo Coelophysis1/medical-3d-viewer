@@ -240,6 +240,7 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
     const gizmoViewPx = 130; // 视口像素尺寸
     const gizmoFrustum = 80; // 正交相机半视锥（世界单位）
     const gizmoScene = new THREE.Scene();
+    gizmoScene.background = new THREE.Color(0xf0f0f0); // 浅灰背景，确保坐标轴清晰可见
 
     // 正交相机始终固定，位置 & 朝向不变 → 原心永远居中
     const gizmoCamera = new THREE.OrthographicCamera(
@@ -333,22 +334,25 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
       const h = container.clientHeight;
       const mode = renderModeRef.current;
 
-      // 清除整个画布
-      sceneRef.current.renderer.clear();
-
       if (mode === 'classic') {
         // 经典模式：WBOIT 渲染
+        sceneRef.current.renderer.clear();
         sceneRef.current.renderer.setViewport(0, 0, w, h);
         sceneRef.current.wboitRenderer.render(scene, camera);
       } else {
         // 电影级模式：EffectComposer 渲染 (SSAO + SMAA)
+        // EffectComposer 内部管理 clear，不需要手动 clear
         sceneRef.current.cinematicComposer.render();
       }
 
       // 渲染 Gizmo（左下角独立区域）
+      // 注意：EffectComposer 会改变 viewport/scissor 状态，需要先恢复全屏视口
+      sceneRef.current.renderer.setViewport(0, 0, w, h);
       sceneRef.current.renderer.setScissorTest(true);
       sceneRef.current.renderer.setViewport(0, 0, gizmoViewPx, gizmoViewPx);
       sceneRef.current.renderer.setScissor(0, 0, gizmoViewPx, gizmoViewPx);
+      // 清除 gizmo 区域的颜色和深度，确保不受 EffectComposer 残留影响
+      sceneRef.current.renderer.clearColor();
       sceneRef.current.renderer.clearDepth();
 
       sceneRef.current.gizmoAxes.quaternion.copy(camera.quaternion).invert();
