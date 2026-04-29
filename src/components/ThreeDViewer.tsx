@@ -180,8 +180,6 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
     renderPass: RenderPass;
     outputPass: OutputPass;
     smaaPass: SMAAPass;
-    renderMode: 'cinematic' | 'classic';
-    _iblEuler?: THREE.Euler;
   } | null>(null);
   // 手动保存初始相机状态，用于复位
   const savedCameraState = useRef<{
@@ -389,24 +387,12 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
       renderPass,
       outputPass,
       smaaPass,
-      renderMode: renderMode as 'cinematic' | 'classic',
     };
 
     const animate = () => {
       if (!sceneRef.current) return;
       sceneRef.current.animationId = requestAnimationFrame(animate);
       sceneRef.current.controls.update();
-
-      // 电影模式：IBL 环境贴图旋转跟随相机，使环境光方向始终对准屏幕方向
-      if (sceneRef.current.renderMode === 'cinematic') {
-        const cameraEuler = sceneRef.current._iblEuler || (sceneRef.current._iblEuler = new THREE.Euler());
-        cameraEuler.setFromQuaternion(camera.quaternion, 'YXZ');
-        sceneRef.current.meshes.forEach((meshData) => {
-          if (meshData.material.envMapRotation) {
-            meshData.material.envMapRotation.copy(cameraEuler);
-          }
-        });
-      }
 
       const w = container.clientWidth;
       const h = container.clientHeight;
@@ -731,7 +717,6 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
     const s = sceneRef.current;
     const nextMode = renderMode === 'cinematic' ? 'classic' : 'cinematic';
     setRenderMode(nextMode);
-    s.renderMode = nextMode;
 
     if (nextMode === 'classic') {
       // 经典模式：关闭色调映射，移除 IBL，灯光跟随相机，禁用 SSAO，绕过 composer
@@ -765,19 +750,21 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
         meshData.material.needsUpdate = true;
       });
     } else {
-      // 电影级模式：恢复所有高级渲染设置，灯光同样跟随相机，启用 composer
+      // 电影级模式：恢复所有高级渲染设置，灯光固定在场景，启用 composer
       s.renderer.toneMapping = THREE.ACESFilmicToneMapping;
       s.renderer.toneMappingExposure = 1.0;
       s.scene.environment = s.envTexture;
-      // 灯光保持挂载在相机上，跟随视角旋转
-      // 电影模式 IBL 提供基础照明，辅助光更柔和
-      s.keyLight.position.set(-40, 60, 40);
-      s.fillLight.position.set(30, 10, -50);
-      s.rimLight.position.set(0, -30, -60);
-      s.keyLight.intensity = 2.5;
-      s.fillLight.intensity = 0.8;
-      s.rimLight.intensity = 0.5;
-      s.ambientLight.intensity = 0.1;
+      // 灯光挂载到场景，固定位置
+      s.scene.add(s.keyLight);
+      s.scene.add(s.fillLight);
+      s.scene.add(s.rimLight);
+      s.keyLight.position.set(80, 120, 60);
+      s.fillLight.position.set(-60, 40, -40);
+      s.rimLight.position.set(-20, -40, 80);
+      s.keyLight.intensity = 1.2;
+      s.fillLight.intensity = 0.4;
+      s.rimLight.intensity = 0.3;
+      s.ambientLight.intensity = 0.3;
       s.ssaoPass.enabled = true;
       s.smaaPass.enabled = true;
       s.wboitRenderer.setComposerEnabled(true);
@@ -797,7 +784,7 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
         meshData.material.ior = tissueParams.ior;
         meshData.material.metalness = tissueParams.metalness;
         meshData.material.roughness = tissueParams.roughness;
-        meshData.material.envMapIntensity = 0.3;
+        meshData.material.envMapIntensity = 0.8;
         meshData.material.needsUpdate = true;
       });
     }
