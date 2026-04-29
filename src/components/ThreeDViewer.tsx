@@ -4,13 +4,22 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import * as THREE from 'three';
 import { TrackballControls } from 'three/examples/jsm/controls/TrackballControls.js';
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { SSAOPass } from 'three/examples/jsm/postprocessing/SSAOPass.js';
+import { SMAAPass } from 'three/examples/jsm/postprocessing/SMAAPass.js';
+import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { getModelColor, ModelConfig } from '@/types/medical';
 import { WBOITRenderer } from '@/lib/wboit';
+
+type RenderMode = 'classic' | 'cinematic';
 
 interface ModelMesh {
   name: string;
   mesh: THREE.Mesh;
-  material: THREE.MeshPhongMaterial;
+  classicMaterial: THREE.MeshPhongMaterial;
+  cinematicMaterial: THREE.MeshPhysicalMaterial;
   visible: boolean;
 }
 
@@ -88,6 +97,39 @@ function calculateVolume(geometry: THREE.BufferGeometry): number {
   return Math.abs(volume) / 6;
 }
 
+// 创建经典模式材质 (MeshPhongMaterial)
+function createClassicMaterial(color: string, opacity: number): THREE.MeshPhongMaterial {
+  const isTransparent = opacity < 100;
+  return new THREE.MeshPhongMaterial({
+    color: new THREE.Color(color),
+    transparent: isTransparent,
+    opacity: isTransparent ? opacity / 100 : 1,
+    shininess: 30,
+    side: THREE.DoubleSide,
+  });
+}
+
+// 创建电影级模式材质 (MeshPhysicalMaterial with fake SSS)
+function createCinematicMaterial(color: string, opacity: number): THREE.MeshPhysicalMaterial {
+  const isTransparent = opacity < 100;
+  const alpha = isTransparent ? opacity / 100 : 1;
+  return new THREE.MeshPhysicalMaterial({
+    color: new THREE.Color(color),
+    metalness: 0.0,
+    roughness: 0.4,
+    transparent: isTransparent || alpha < 1,
+    opacity: alpha,
+    // 透射设置：模拟光线穿透组织 (fake SSS)
+    transmission: isTransparent ? Math.min(alpha * 0.6, 0.6) : 0,
+    thickness: 1.5,
+    ior: 1.38,
+    // 清漆效果：模拟器官表面湿润感
+    clearcoat: 0.1,
+    clearcoatRoughness: 0.2,
+    side: THREE.DoubleSide,
+  });
+}
+
 export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<{
@@ -101,7 +143,12 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
     gizmoCamera: THREE.OrthographicCamera;
     gizmoAxes: THREE.Group;
     wboitRenderer: WBOITRenderer;
+    cinematicComposer: EffectComposer;
     animationId: number;
+    // 经典模式灯光
+    classicLights: THREE.Light[];
+    // 电影模式环境贴图
+    envTexture: THREE.Texture;
   } | null>(null);
   // 手动保存初始相机状态，用于复位
   const savedCameraState = useRef<{
@@ -122,7 +169,8 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
   const centerDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // UI 控制状态
-  const [axesVisible, setAxesVisible] = useState(false);
+  const [renderMode, setRenderMode] = useState<RenderMode>('classic');
+  const renderModeRef = useRef<RenderMode>('classic');
   const [bgColorIndex, setBgColorIndex] = useState(2); // 0:黑 1:灰 2:白(默认)
   // 使用 useRef 避免每次渲染创建新数组
   const bgColorsRef = useRef(['#000000', '#808080', '#ffffff']);
@@ -146,16 +194,27 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
     renderer.setPixelRatio(window.devicePixelRatio);
     container.appendChild(renderer.domElement);
 
+    // 经典模式灯光
+    const classicLights: THREE.Light[] = [];
     const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+    classicLights.push(ambientLight);
     scene.add(ambientLight);
 
     const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
     directionalLight.position.set(100, 100, 50);
+    classicLights.push(directionalLight);
     scene.add(directionalLight);
 
     const directionalLight2 = new THREE.DirectionalLight(0xffffff, 0.4);
     directionalLight2.position.set(-50, -50, -50);
+    classicLights.push(directionalLight2);
     scene.add(directionalLight2);
+
+    // 电影级模式：生成虚拟摄影棚环境贴图 (IBL)
+    const pmremGenerator = new THREE.PMREMGenerator(renderer);
+    pmremGenerator.compileEquirectangularShader();
+    const envTexture = pmremGenerator.fromScene(new RoomEnvironment(), 0.04).texture;
+    pmremGenerator.dispose();
 
     const controls = new TrackballControls(camera, renderer.domElement);
     controls.rotateSpeed = 2.0;
@@ -226,8 +285,27 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
     // 禁用自动清除，以便同一 Canvas 上绘制两次
     renderer.autoClear = false;
 
-    // WBOIT (Order-Independent Transparency) 渲染器
+    // WBOIT (Order-Independent Transparency) 渲染器 — 经典模式使用
     const wboitRenderer = new WBOITRenderer(renderer);
+
+    // EffectComposer — 电影级模式使用
+    // 注意：EffectComposer 在 renderToScreen=true 时会自动输出到 canvas
+    const cinematicComposer = new EffectComposer(renderer);
+    const renderPass = new RenderPass(scene, camera);
+    cinematicComposer.addPass(renderPass);
+
+    const ssaoPass = new SSAOPass(scene, camera, width, height);
+    ssaoPass.kernelRadius = 16;
+    ssaoPass.minDistance = 0.001;
+    ssaoPass.maxDistance = 0.1;
+    cinematicComposer.addPass(ssaoPass);
+
+    const smaaPass = new SMAAPass();
+    cinematicComposer.addPass(smaaPass);
+
+    // OutputPass 确保色调映射和色彩空间转换正确
+    const outputPass = new OutputPass();
+    cinematicComposer.addPass(outputPass);
 
     sceneRef.current = {
       scene,
@@ -240,7 +318,10 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
       gizmoCamera,
       gizmoAxes,
       wboitRenderer,
+      cinematicComposer,
       animationId: 0,
+      classicLights,
+      envTexture,
     };
 
     const animate = () => {
@@ -250,18 +331,21 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
 
       const w = container.clientWidth;
       const h = container.clientHeight;
+      const mode = renderModeRef.current;
 
       // 清除整个画布
       sceneRef.current.renderer.clear();
 
-      // 1. 渲染主场景（全屏视口）— 使用 WBOIT 实现顺序无关透明度
-      sceneRef.current.renderer.setViewport(0, 0, w, h);
-      sceneRef.current.wboitRenderer.render(scene, camera);
+      if (mode === 'classic') {
+        // 经典模式：WBOIT 渲染
+        sceneRef.current.renderer.setViewport(0, 0, w, h);
+        sceneRef.current.wboitRenderer.render(scene, camera);
+      } else {
+        // 电影级模式：EffectComposer 渲染 (SSAO + SMAA)
+        sceneRef.current.cinematicComposer.render();
+      }
 
-      // 2. 渲染 Gizmo（左下角独立区域）
-      //    关键：gizmoCamera 始终固定不动，原心永远在视口正中
-      //    仅将主相机的旋转反向应用到 gizmoAxes 组，使其反映当前视角
-      //    平移和缩放不会改变主相机的 quaternion，因此 gizmo 天然免疫
+      // 渲染 Gizmo（左下角独立区域）
       sceneRef.current.renderer.setScissorTest(true);
       sceneRef.current.renderer.setViewport(0, 0, gizmoViewPx, gizmoViewPx);
       sceneRef.current.renderer.setScissor(0, 0, gizmoViewPx, gizmoViewPx);
@@ -282,6 +366,7 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
       sceneRef.current.camera.aspect = newWidth / newHeight;
       sceneRef.current.camera.updateProjectionMatrix();
       sceneRef.current.renderer.setSize(newWidth, newHeight);
+      sceneRef.current.cinematicComposer.setSize(newWidth, newHeight);
     };
 
     window.addEventListener('resize', handleResize);
@@ -291,6 +376,7 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
       if (sceneRef.current) {
         cancelAnimationFrame(sceneRef.current.animationId);
         sceneRef.current.wboitRenderer.dispose();
+        sceneRef.current.envTexture.dispose();
       }
       renderer.dispose();
       if (container.contains(renderer.domElement)) {
@@ -333,13 +419,26 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
       models.forEach((config, index) => {
         const meshData = sceneRef.current!.meshes[index];
         if (!meshData) return;
-        const isTransparent = config.opacity < 100;
+        const color = getModelColor(config.color);
+        const opacity = config.opacity;
+        const isTransparent = opacity < 100;
+
         meshData.mesh.visible = config.visible;
         meshData.visible = config.visible;
-        meshData.material.opacity = isTransparent ? config.opacity / 100 : 1;
-        meshData.material.transparent = isTransparent;
-        meshData.material.color.set(getModelColor(config.color));
-        meshData.material.needsUpdate = true;
+
+        // 更新经典材质
+        meshData.classicMaterial.opacity = isTransparent ? opacity / 100 : 1;
+        meshData.classicMaterial.transparent = isTransparent;
+        meshData.classicMaterial.color.set(color);
+        meshData.classicMaterial.needsUpdate = true;
+
+        // 更新电影级材质
+        const alpha = isTransparent ? opacity / 100 : 1;
+        meshData.cinematicMaterial.opacity = alpha;
+        meshData.cinematicMaterial.transparent = isTransparent || alpha < 1;
+        meshData.cinematicMaterial.color.set(color);
+        meshData.cinematicMaterial.transmission = isTransparent ? Math.min(alpha * 0.6, 0.6) : 0;
+        meshData.cinematicMaterial.needsUpdate = true;
       });
       return;
     }
@@ -347,9 +446,8 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
     const loadModels = async () => {
       const { scene, meshes: existingMeshes } = sceneRef.current!;
 
-      // 清理旧模型（包括可能的背面子mesh）
+      // 清理旧模型
       existingMeshes.forEach(m => {
-        // 移除子mesh（背面mesh等）
         while (m.mesh.children.length > 0) {
           const child = m.mesh.children[0];
           m.mesh.remove(child);
@@ -359,7 +457,8 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
         }
         scene.remove(m.mesh);
         m.mesh.geometry.dispose();
-        m.material.dispose();
+        m.classicMaterial.dispose();
+        m.cinematicMaterial.dispose();
       });
       sceneRef.current!.meshes = [];
       modelsLoadedRef.current = false;
@@ -373,6 +472,8 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
 
       for (let i = 0; i < models.length; i++) {
         const config = models[i];
+        const color = getModelColor(config.color);
+        const opacity = config.opacity;
         
         try {
           // 判断文件来源：s3:// 开头则通过代理API获取，否则直接使用本地路径
@@ -399,17 +500,14 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
             geometry = loader.parse(arrayBuffer);
           }
           
-          const isTransparent = config.opacity < 100;
+          // 创建双模式材质
+          const classicMaterial = createClassicMaterial(color, opacity);
+          const cinematicMaterial = createCinematicMaterial(color, opacity);
 
-          const material = new THREE.MeshPhongMaterial({
-            color: new THREE.Color(getModelColor(config.color)),
-            transparent: isTransparent,
-            opacity: isTransparent ? config.opacity / 100 : 1,
-            shininess: 30,
-            side: THREE.DoubleSide,
-          });
+          // 根据当前渲染模式选择材质
+          const activeMaterial = renderModeRef.current === 'cinematic' ? cinematicMaterial : classicMaterial;
 
-          const mesh = new THREE.Mesh(geometry, material);
+          const mesh = new THREE.Mesh(geometry, activeMaterial);
           mesh.name = config.name;
           mesh.visible = config.visible;
 
@@ -417,7 +515,8 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
           newMeshes.push({
             name: config.name,
             mesh,
-            material,
+            classicMaterial,
+            cinematicMaterial,
             visible: config.visible,
           });
           
@@ -426,21 +525,18 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
         } catch (err) {
           console.error(`处理模型 ${config.name} 失败:`, err);
           const placeholderGeo = new THREE.BoxGeometry(30, 40, 50);
-          const material = new THREE.MeshPhongMaterial({
-            color: new THREE.Color(getModelColor(config.color)),
-            transparent: true,
-            opacity: 0.5,
-            shininess: 30,
-            side: THREE.DoubleSide,
-          });
-          const mesh = new THREE.Mesh(placeholderGeo, material);
+          const classicMaterial = createClassicMaterial(color, 50);
+          const cinematicMaterial = createCinematicMaterial(color, 50);
+          const activeMaterial = renderModeRef.current === 'cinematic' ? cinematicMaterial : classicMaterial;
+          const mesh = new THREE.Mesh(placeholderGeo, activeMaterial);
           mesh.name = config.name;
           mesh.visible = config.visible;
           scene.add(mesh);
           newMeshes.push({
             name: config.name,
             mesh,
-            material,
+            classicMaterial,
+            cinematicMaterial,
             visible: config.visible,
           });
         }
@@ -488,11 +584,9 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
         const camera = sceneRef.current!.camera;
         const fovRad = (camera.fov * Math.PI) / 180;
         const aspect = camera.aspect;
-        // 垂直方向所需距离
         const distV = scaledMaxDim / (2 * Math.tan(fovRad / 2));
-        // 水平方向所需距离
         const distH = scaledMaxDim / (2 * Math.tan(fovRad / 2) * aspect);
-        const fitDistance = Math.max(distV, distH) * 1.5; // 1.5 留边距
+        const fitDistance = Math.max(distV, distH) * 1.5;
 
         // 5. 设置相机位置：方位角45°，仰角30°
         const azimuth = Math.PI / 4;
@@ -552,28 +646,77 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
     });
   }, []);
 
-  // 坐标轴切换
-  const handleToggleAxes = useCallback(() => {
+  // 渲染模式切换：经典 ↔ 电影级
+  const handleToggleRenderMode = useCallback(() => {
     if (!sceneRef.current) return;
-    const axes = sceneRef.current.axesGroup;
-    axes.visible = !axes.visible;
-    setAxesVisible(axes.visible);
+    const s = sceneRef.current;
+    const newMode: RenderMode = renderModeRef.current === 'classic' ? 'cinematic' : 'classic';
+
+    if (newMode === 'cinematic') {
+      // 切换到电影级模式
+      // 1. 开启 ACES Filmic 色调映射
+      s.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      s.renderer.toneMappingExposure = 1.0;
+
+      // 2. 设置 IBL 环境贴图
+      s.scene.environment = s.envTexture;
+
+      // 3. 隐藏经典模式灯光（IBL 提供照明）
+      s.classicLights.forEach(l => { l.visible = false; });
+
+      // 4. 切换所有模型的材质为 MeshPhysicalMaterial
+      s.meshes.forEach(meshData => {
+        meshData.mesh.material = meshData.cinematicMaterial;
+      });
+    } else {
+      // 切换回经典模式
+      // 1. 恢复默认色调映射
+      s.renderer.toneMapping = THREE.NoToneMapping;
+      s.renderer.toneMappingExposure = 1.0;
+
+      // 2. 移除 IBL 环境贴图
+      s.scene.environment = null;
+
+      // 3. 恢复经典模式灯光
+      s.classicLights.forEach(l => { l.visible = true; });
+
+      // 4. 切换所有模型的材质为 MeshPhongMaterial
+      s.meshes.forEach(meshData => {
+        meshData.mesh.material = meshData.classicMaterial;
+      });
+    }
+
+    renderModeRef.current = newMode;
+    setRenderMode(newMode);
   }, []);
 
   // 直接更新mesh属性函数
   const updateMeshProperties = useCallback(() => {
     if (!sceneRef.current || sceneRef.current.meshes.length === 0) return;
-    // WBOIT handles transparency automatically — just update material properties
+    const mode = renderModeRef.current;
     sceneRef.current.meshes.forEach((meshData, index) => {
       const config = models[index];
       if (!config) return;
-      const isTransparent = config.opacity < 100;
+      const color = getModelColor(config.color);
+      const opacity = config.opacity;
+      const isTransparent = opacity < 100;
+      const alpha = isTransparent ? opacity / 100 : 1;
+
       meshData.mesh.visible = config.visible;
       meshData.visible = config.visible;
-      meshData.material.opacity = isTransparent ? config.opacity / 100 : 1;
-      meshData.material.transparent = isTransparent;
-      meshData.material.color.set(getModelColor(config.color));
-      meshData.material.needsUpdate = true;
+
+      if (mode === 'classic') {
+        meshData.classicMaterial.opacity = isTransparent ? alpha : 1;
+        meshData.classicMaterial.transparent = isTransparent;
+        meshData.classicMaterial.color.set(color);
+        meshData.classicMaterial.needsUpdate = true;
+      } else {
+        meshData.cinematicMaterial.opacity = alpha;
+        meshData.cinematicMaterial.transparent = isTransparent || alpha < 1;
+        meshData.cinematicMaterial.color.set(color);
+        meshData.cinematicMaterial.transmission = isTransparent ? Math.min(alpha * 0.6, 0.6) : 0;
+        meshData.cinematicMaterial.needsUpdate = true;
+      }
     });
   }, [models]);
 
@@ -613,18 +756,37 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
           <span className="text-[10px] font-semibold text-slate-700 leading-tight">切换背景</span>
         </button>
 
-        {/* 按钮3：显示坐标 */}
+        {/* 按钮3：渲染模式切换（经典/电影级） */}
         <button
-          onClick={handleToggleAxes}
+          onClick={handleToggleRenderMode}
           className={`group flex flex-col items-center gap-1 w-[72px] py-2.5 rounded-xl border shadow-[0_2px_6px_rgba(0,0,0,0.08)] hover:shadow-[0_4px_12px_rgba(0,0,0,0.12)] active:scale-95 transition-all duration-200 ${
-            axesVisible
-              ? 'bg-gray-100 border-gray-300/80'
+            renderMode === 'cinematic'
+              ? 'bg-amber-50 border-amber-300/80'
               : 'bg-white border-gray-200/80 hover:border-gray-300'
           }`}
-          title={axesVisible ? '隐藏坐标' : '显示坐标'}
+          title={renderMode === 'cinematic' ? '切换为经典渲染' : '切换为电影级渲染'}
         >
-          <img src="/icon-axes.png" alt="显示坐标" className="w-6 h-6 object-contain" draggable={false} />
-          <span className="text-[10px] font-semibold text-slate-700 leading-tight">显示坐标</span>
+          {renderMode === 'cinematic' ? (
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-6 h-6 text-amber-600">
+              <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
+              <path d="M21 3v5h-5" />
+              <path d="M12 7v5l3 3" />
+            </svg>
+          ) : (
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-6 h-6 text-slate-600">
+              <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18" />
+              <line x1="7" y1="2" x2="7" y2="22" />
+              <line x1="17" y1="2" x2="17" y2="22" />
+              <line x1="2" y1="12" x2="22" y2="12" />
+              <line x1="2" y1="7" x2="7" y2="7" />
+              <line x1="2" y1="17" x2="7" y2="17" />
+              <line x1="17" y1="7" x2="22" y2="7" />
+              <line x1="17" y1="17" x2="22" y2="17" />
+            </svg>
+          )}
+          <span className={`text-[10px] font-semibold leading-tight ${renderMode === 'cinematic' ? 'text-amber-700' : 'text-slate-700'}`}>
+            {renderMode === 'cinematic' ? '电影级' : '经典'}
+          </span>
         </button>
       </div>
       
