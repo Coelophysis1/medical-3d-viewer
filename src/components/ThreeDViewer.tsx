@@ -196,7 +196,7 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
   const centerDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // UI 控制状态
-  const [renderMode, setRenderMode] = useState<'cinematic' | 'classic'>('cinematic');
+  const [renderMode, setRenderMode] = useState<'cinematic' | 'classic'>('classic');
   const [bgColorIndex, setBgColorIndex] = useState(2); // 0:黑 1:灰 2:白(默认)
   // 使用 useRef 避免每次渲染创建新数组
   const bgColorsRef = useRef(['#000000', '#808080', '#ffffff']);
@@ -216,45 +216,44 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
     camera.lookAt(0, 0, 0);
 
     // ──────────────────────────────────────────────
-    //  1. 渲染器：电影级色调映射 + 物理光照
+    //  1. 渲染器（默认经典模式，切换时动态调整）
     // ──────────────────────────────────────────────
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setSize(width, height);
     renderer.setPixelRatio(window.devicePixelRatio);
 
-    // ACES Filmic 色调映射：防止高光过曝，色彩更沉稳
-    renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.0;
-
-    // 物理正确的灯光衰减（Three.js r163+ 默认已启用物理光照）
+    // 经典模式：无色调映射，曝光稍高
+    renderer.toneMapping = THREE.NoToneMapping;
+    renderer.toneMappingExposure = 1.2;
 
     container.appendChild(renderer.domElement);
 
     // ──────────────────────────────────────────────
-    //  2. IBL 环境光（RoomEnvironment 虚拟摄影棚）
+    //  2. IBL 环境光（预生成，切换时按需启用/禁用）
     // ──────────────────────────────────────────────
     const pmremGenerator = new THREE.PMREMGenerator(renderer);
     pmremGenerator.compileEquirectangularShader();
     const envTexture = pmremGenerator.fromScene(new RoomEnvironment(), 0.04).texture;
-    scene.environment = envTexture;
+    // 经典模式不使用 IBL
+    // scene.environment = envTexture;
     pmremGenerator.dispose();
 
-    // 保留低强度环境光作为补光
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.3);
+    // 经典模式灯光：较强环境光 + 双方向光
+    const ambientLight = new THREE.AmbientLight(0xffffff, 1.2);
     scene.add(ambientLight);
 
-    // 主方向光：模拟手术灯
-    const keyLight = new THREE.DirectionalLight(0xffffff, 1.2);
+    // 主方向光
+    const keyLight = new THREE.DirectionalLight(0xffffff, 2.0);
     keyLight.position.set(80, 120, 60);
     scene.add(keyLight);
 
-    // 补光：减少硬阴影
-    const fillLight = new THREE.DirectionalLight(0xc8d8e8, 0.4);
+    // 补光
+    const fillLight = new THREE.DirectionalLight(0xc8d8e8, 1.0);
     fillLight.position.set(-60, 40, -40);
     scene.add(fillLight);
 
-    // 边缘光：增强轮廓
-    const rimLight = new THREE.DirectionalLight(0xe8f0ff, 0.3);
+    // 边缘光
+    const rimLight = new THREE.DirectionalLight(0xe8f0ff, 0.4);
     rimLight.position.set(-20, -40, 80);
     scene.add(rimLight);
 
@@ -265,12 +264,13 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
     const renderPass = new RenderPass(scene, camera);
     composer.addPass(renderPass);
 
-    // SSAO 环境光遮蔽：加深沟壑阴影，增强立体感
+    // SSAO 环境光遮蔽：加深沟壑阴影，增强立体感（经典模式默认禁用）
     const ssaoPass = new SSAOPass(scene, camera, width, height);
     ssaoPass.kernelRadius = 16;
     ssaoPass.minDistance = 0.001;
     ssaoPass.maxDistance = 0.1;
     ssaoPass.output = SSAOPass.OUTPUT.Default;
+    ssaoPass.enabled = false;
     composer.addPass(ssaoPass);
 
     // OutputPass：色调映射 + 颜色空间转换（替代手动 OutputPass）
@@ -278,8 +278,9 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
     composer.addPass(outputPass);
 
     // SMAA 抗锯齿：EffectComposer 的渲染目标不继承 WebGLRenderer 的 antialias，
-    // 必须添加 SMAA 来消除锯齿（SMAAPass 自动检测渲染尺寸）
+    // 必须添加 SMAA 来消除锯齿（经典模式使用 renderer.render 直出，禁用 SMAA）
     const smaaPass = new SMAAPass();
+    smaaPass.enabled = false;
     composer.addPass(smaaPass);
 
     // ──────────────────────────────────────────────
@@ -356,6 +357,8 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
     //  6. WBOIT 渲染器（传入 composer 用于不透明通道后期处理）
     // ──────────────────────────────────────────────
     const wboitRenderer = new WBOITRenderer(renderer, composer);
+    // 经典模式默认禁用 composer（使用 renderer.render 直出，保留 MSAA 抗锯齿）
+    wboitRenderer.setComposerEnabled(false);
 
     sceneRef.current = {
       scene,
@@ -538,7 +541,7 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
           const tissueParams = getTissueMaterialParams(config.color);
 
           // ──────────────────────────────────────────────
-          //  MeshPhysicalMaterial + Fake SSS
+          //  MeshPhysicalMaterial（默认经典模式参数）
           // ──────────────────────────────────────────────
           const material = new THREE.MeshPhysicalMaterial({
             color: new THREE.Color(colorValue),
@@ -546,21 +549,20 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
             opacity: isTransparent ? config.opacity / 100 : 1,
             side: THREE.DoubleSide,
 
-            // 物理材质参数（基于组织类型）
-            metalness: tissueParams.metalness,
-            roughness: tissueParams.roughness,
+            // 经典模式参数（Lambert 风格）
+            metalness: 0,
+            roughness: 0.8,
 
-            // Fake SSS：透射 + 厚度 + 折射率
-            transmission: isTransparent ? tissueParams.transmission * 0.5 : tissueParams.transmission,
-            thickness: tissueParams.thickness,
-            ior: tissueParams.ior,
+            // Fake SSS 参数（电影级切换时启用）
+            transmission: 0,
+            thickness: 0,
+            ior: 1.5,
 
-            // 清漆效果：模拟器官表面湿润感
-            clearcoat: tissueParams.clearcoat,
-            clearcoatRoughness: tissueParams.clearcoatRoughness,
+            clearcoat: 0,
+            clearcoatRoughness: 0.2,
 
-            // 环境光影响强度
-            envMapIntensity: 0.8,
+            // 经典模式不使用环境贴图
+            envMapIntensity: 0,
           });
 
           const mesh = new THREE.Mesh(geometry, material);
@@ -586,13 +588,14 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
             transparent: true,
             opacity: 0.5,
             side: THREE.DoubleSide,
-            metalness: tissueParams.metalness,
-            roughness: tissueParams.roughness,
-            transmission: tissueParams.transmission,
-            thickness: tissueParams.thickness,
-            ior: tissueParams.ior,
-            clearcoat: tissueParams.clearcoat,
-            clearcoatRoughness: tissueParams.clearcoatRoughness,
+            metalness: 0,
+            roughness: 0.8,
+            transmission: 0,
+            thickness: 0,
+            ior: 1.5,
+            clearcoat: 0,
+            clearcoatRoughness: 0.2,
+            envMapIntensity: 0,
           });
           const mesh = new THREE.Mesh(placeholderGeo, material);
           mesh.name = config.name;
@@ -827,9 +830,12 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
           }`}
           title={renderMode === 'cinematic' ? '切换为经典渲染' : '切换为电影级渲染'}
         >
-          <span className={`text-lg leading-none ${renderMode === 'cinematic' ? 'text-amber-500' : 'text-gray-400'}`}>
-            {renderMode === 'cinematic' ? '🎬' : '📐'}
-          </span>
+          <img
+            src={renderMode === 'cinematic' ? '/icon-cinematic.png' : '/icon-classic.png'}
+            alt={renderMode === 'cinematic' ? '电影级' : '经典'}
+            className="w-6 h-6 object-contain"
+            draggable={false}
+          />
           <span className="text-[10px] font-semibold text-slate-700 leading-tight">
             {renderMode === 'cinematic' ? '电影级' : '经典'}
           </span>
