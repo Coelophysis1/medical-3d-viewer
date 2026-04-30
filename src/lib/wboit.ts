@@ -60,6 +60,17 @@ uniform sampler2D tAccum;
 uniform sampler2D tReveal;
 varying vec2 vUv;
 
+// ACES Filmic tone mapping (matches Three.js ACESFilmicToneMapping)
+vec3 acesFilmic(vec3 x) {
+  // Stephen Hill's fit to the ACES RRT/ODT curve
+  float a = 2.51;
+  float b = 0.03;
+  float c = 2.43;
+  float d = 0.59;
+  float e = 0.14;
+  return clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.0, 1.0);
+}
+
 // Linear → sRGB encoding (matches Three.js colorspace_fragment)
 vec3 linearToSRGB(vec3 value) {
   return mix(
@@ -68,6 +79,9 @@ vec3 linearToSRGB(vec3 value) {
     vec3(lessThanEqual(value, vec3(0.0031308)))
   );
 }
+
+uniform float uToneMapping;
+uniform float uToneMappingExposure;
 
 void main() {
   vec4 opaque    = texture2D(tOpaque, vUv);
@@ -83,6 +97,11 @@ void main() {
   // (1 - T) is the total fraction of light absorbed by transparent surfaces.
   float transAmount = 1.0 - revealage;
   vec3 finalColor = opaque.rgb * revealage + transparentColor * transAmount;
+
+  // Apply ACES tone mapping when enabled (matches cinematic mode OutputPass behavior)
+  if (uToneMapping > 0.5) {
+    finalColor = acesFilmic(finalColor * uToneMappingExposure);
+  }
 
   // Encode from linear to sRGB for display (opaqueRT stores linear values
   // because Pass 1 renders with outputColorSpace = LinearSRGBColorSpace).
@@ -150,6 +169,8 @@ export class WBOITRenderer {
         tOpaque: { value: null },
         tAccum: { value: null },
         tReveal: { value: null },
+        uToneMapping: { value: 0.0 },
+        uToneMappingExposure: { value: 1.0 },
       },
       depthTest: false,
       depthWrite: false,
@@ -434,6 +455,10 @@ export class WBOITRenderer {
     this.height = 0;
   }
 
+  setToneMapping(toneMapping: number) {
+    this.compositeMaterial.uniforms.uToneMapping.value = toneMapping;
+  }
+
   render(scene: THREE.Scene, camera: THREE.Camera) {
     const size = new THREE.Vector2();
     this.renderer.getSize(size);
@@ -582,6 +607,8 @@ export class WBOITRenderer {
       this.compositeMaterial.uniforms.tOpaque.value = this.opaqueRT!.texture;
       this.compositeMaterial.uniforms.tAccum.value = this.accumRT!.texture;
       this.compositeMaterial.uniforms.tReveal.value = this.revealRT!.texture;
+      this.compositeMaterial.uniforms.uToneMapping.value = this.renderer.toneMapping === THREE.ACESFilmicToneMapping ? 1.0 : 0.0;
+      this.compositeMaterial.uniforms.uToneMappingExposure.value = this.renderer.toneMappingExposure;
 
       this.renderer.setRenderTarget(null);
       this.renderer.setClearColor(prevClearColor, prevClearAlpha);

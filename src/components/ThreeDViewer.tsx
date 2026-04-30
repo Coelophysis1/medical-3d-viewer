@@ -204,7 +204,10 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
   const [renderMode, setRenderMode] = useState<'cinematic' | 'classic'>('classic');
   const [bgColorIndex, setBgColorIndex] = useState(2); // 0:黑 1:灰 2:白(默认)
   // 使用 useRef 避免每次渲染创建新数组
-  const bgColorsRef = useRef(['#000000', '#808080', '#ffffff']);
+  const bgColorsRef = useRef([
+    ['#000000', '#f5f5f5', '#ffffff'],  // 经典模式背景色
+    ['#000000', '#f0f0f0', '#ffffff'],  // 电影模式背景色（淡灰代替白）
+  ]);
   const bgLabelsRef = useRef(['黑', '灰', '白']);
 
   // 创建场景的核心逻辑
@@ -737,13 +740,13 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
   // 背景切换
   const handleToggleBackground = useCallback(() => {
     if (!sceneRef.current) return;
-    const bgColors = bgColorsRef.current;
+    const bgColors = bgColorsRef.current[renderMode === 'cinematic' ? 1 : 0];
     setBgColorIndex(prev => {
       const next = (prev + 1) % bgColors.length;
       sceneRef.current!.scene.background = new THREE.Color(bgColors[next]);
       return next;
     });
-  }, []);
+  }, [renderMode]);
 
   // 渲染模式切换
   const handleToggleRenderMode = useCallback(() => {
@@ -764,6 +767,15 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
       s.ssaoPass.enabled = false;
       s.smaaPass.enabled = false;
       s.wboitRenderer.setComposerEnabled(false);
+      s.wboitRenderer.setToneMapping(0);
+
+      // 经典模式背景色替换：电影模式淡灰 → 经典模式白
+      if (s.scene.background instanceof THREE.Color) {
+        const bgHex = '#' + s.scene.background.getHexString();
+        if (bgHex === '#f0f0f0') {
+          s.scene.background = new THREE.Color('#f5f5f5');
+        }
+      }
 
       // 切换材质为经典 Lambert 风格
       s.meshes.forEach((meshData) => {
@@ -788,6 +800,15 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
       s.ssaoPass.enabled = true;
       s.smaaPass.enabled = true;
       s.wboitRenderer.setComposerEnabled(true);
+      s.wboitRenderer.setToneMapping(1);
+
+      // 电影模式背景色替换：经典模式白 → 电影模式淡灰
+      if (s.scene.background instanceof THREE.Color) {
+        const bgHex = '#' + s.scene.background.getHexString();
+        if (bgHex === '#ffffff' || bgHex === '#f5f5f5') {
+          s.scene.background = new THREE.Color('#f0f0f0');
+        }
+      }
 
       // 恢复材质为电影级物理材质
       s.meshes.forEach((meshData) => {
