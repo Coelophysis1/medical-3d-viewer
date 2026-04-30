@@ -232,7 +232,7 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
 
     // 经典模式：无色调映射，曝光稍高
     renderer.toneMapping = THREE.NoToneMapping;
-    renderer.toneMappingExposure = 1.6;
+    renderer.toneMappingExposure = 2.0;
 
     container.appendChild(renderer.domElement);
 
@@ -247,21 +247,21 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
     pmremGenerator.dispose();
 
     // 灯光：经典模式默认值（animate 中会跟随摄像机）
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
     scene.add(ambientLight);
 
     // 主方向光
-    const keyLight = new THREE.DirectionalLight(0xffffff, 3.0);
+    const keyLight = new THREE.DirectionalLight(0xffffff, 4.0);
     keyLight.position.set(80, 120, 60);
     scene.add(keyLight);
 
     // 补光
-    const fillLight = new THREE.DirectionalLight(0xc8d8e8, 1.5);
+    const fillLight = new THREE.DirectionalLight(0xc8d8e8, 2.0);
     fillLight.position.set(-60, 40, -40);
     scene.add(fillLight);
 
     // 边缘光
-    const rimLight = new THREE.DirectionalLight(0xe8f0ff, 0.8);
+    const rimLight = new THREE.DirectionalLight(0xe8f0ff, 1.0);
     rimLight.position.set(-20, -40, 80);
     scene.add(rimLight);
 
@@ -758,12 +758,12 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
     if (nextMode === 'classic') {
       // 经典模式：关闭色调映射，移除 IBL，高亮度方向光 + 充足环境光
       s.renderer.toneMapping = THREE.NoToneMapping;
-      s.renderer.toneMappingExposure = 1.6;
+      s.renderer.toneMappingExposure = 2.0;
       s.scene.environment = null;
-      s.keyLight.intensity = 3.0;
-      s.fillLight.intensity = 1.5;
-      s.rimLight.intensity = 0.8;
-      s.ambientLight.intensity = 0.6;
+      s.keyLight.intensity = 3.5;
+      s.fillLight.intensity = 2.0;
+      s.rimLight.intensity = 1.0;
+      s.ambientLight.intensity = 0.8;
       s.ssaoPass.enabled = false;
       s.smaaPass.enabled = false;
       s.wboitRenderer.setComposerEnabled(false);
