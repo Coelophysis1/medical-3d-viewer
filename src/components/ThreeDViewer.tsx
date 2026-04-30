@@ -898,7 +898,7 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
             draggable={false}
           />
           <span className="text-[10px] font-semibold text-slate-700 leading-tight">
-            {renderMode === 'cinematic' ? '电影级' : '经典'}
+            {renderMode === 'cinematic' ? '电影渲染' : '经典渲染'}
           </span>
         </button>
       </div>
