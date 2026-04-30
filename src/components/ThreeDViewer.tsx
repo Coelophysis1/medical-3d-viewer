@@ -205,8 +205,8 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
   const [bgColorIndex, setBgColorIndex] = useState(2); // 0:黑 1:灰 2:白(默认)
   // 使用 useRef 避免每次渲染创建新数组
   const bgColorsRef = useRef([
-    ['#000000', '#f5f5f5', '#ffffff'],  // 经典模式背景色
-    ['#000000', '#f0f0f0', '#ffffff'],  // 电影模式背景色（淡灰代替白）
+    ['#000000', '#f5f5f5', '#ffffff'],  // 经典模式背景色（黑/灰/白）
+    ['#000000', '#f5f5f5', '#f0f0f0'],  // 电影模式背景色（黑/灰/淡灰）
   ]);
   const bgLabelsRef = useRef(['黑', '灰', '白']);
 
