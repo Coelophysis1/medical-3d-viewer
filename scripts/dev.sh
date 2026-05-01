@@ -29,6 +29,21 @@ kill_port_if_listening() {
 
 echo "Clearing port ${PORT} before start."
 kill_port_if_listening
+
+# Verify critical modules exist before starting
+echo "Verifying critical modules..."
+CRITICAL_MODULES=("next" "react" "react-dom")
+MISSING=0
+for mod in "${CRITICAL_MODULES[@]}"; do
+  if ! node -e "require.resolve('${mod}')" 2>/dev/null; then
+    echo "WARNING: Critical module '${mod}' not found! Running pnpm install..."
+    MISSING=1
+  fi
+done
+if [ "$MISSING" -eq 1 ]; then
+  pnpm install
+fi
+
 echo "Starting HTTP service on port ${PORT} for dev..."
 
 PORT=$PORT pnpm tsx watch src/server.ts
