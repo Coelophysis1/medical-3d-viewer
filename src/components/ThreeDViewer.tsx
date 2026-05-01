@@ -892,7 +892,7 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
           title={renderMode === 'cinematic' ? '切换为经典渲染' : '切换为电影级渲染'}
         >
           <img
-            src={renderMode === 'cinematic' ? '/icon-cinematic.png' : '/icon-classic.png'}
+            src={renderMode === 'cinematic' ? '/icon-cinematic.svg' : '/icon-classic.svg'}
             alt={renderMode === 'cinematic' ? '电影级' : '经典'}
             className="w-6 h-6 object-contain"
             draggable={false}

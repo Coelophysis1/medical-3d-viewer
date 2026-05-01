@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100%" height="100%">
+  <!-- 经典3D线框立方体图标 -->
+  <!-- 正面 -->
+  <rect x="16" y="28" width="44" height="44" rx="2" ry="2" fill="none" stroke="#6B7280" stroke-width="4.5" stroke-linejoin="round"/>
+  <!-- 背面偏移 -->
+  <rect x="34" y="14" width="44" height="44" rx="2" ry="2" fill="none" stroke="#6B7280" stroke-width="4.5" stroke-linejoin="round" opacity="0.45"/>
+  <!-- 连接棱线 -->
+  <line x1="60" y1="28" x2="78" y2="14" stroke="#6B7280" stroke-width="4.5" stroke-linecap="round"/>
+  <line x1="16" y1="28" x2="34" y2="14" stroke="#6B7280" stroke-width="4.5" stroke-linecap="round"/>
+  <line x1="60" y1="72" x2="78" y2="58" stroke="#6B7280" stroke-width="4.5" stroke-linecap="round"/>
+  <!-- 网格线（表示线框） -->
+  <line x1="16" y1="50" x2="60" y2="50" stroke="#6B7280" stroke-width="2.5" stroke-linecap="round" opacity="0.35"/>
+  <line x1="38" y1="28" x2="38" y2="72" stroke="#6B7280" stroke-width="2.5" stroke-linecap="round" opacity="0.35"/>
+  <!-- 顶点装饰点 -->
+  <circle cx="16" cy="28" r="2.5" fill="#6B7280" opacity="0.5"/>
+  <circle cx="60" cy="28" r="2.5" fill="#6B7280" opacity="0.5"/>
+  <circle cx="16" cy="72" r="2.5" fill="#6B7280" opacity="0.5"/>
+  <circle cx="60" cy="72" r="2.5" fill="#6B7280" opacity="0.5"/>
+</svg>
