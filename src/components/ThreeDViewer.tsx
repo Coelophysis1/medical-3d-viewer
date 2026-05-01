@@ -894,7 +894,7 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
           <img
             src={renderMode === 'cinematic' ? '/icon-cinematic.svg' : '/icon-classic.svg'}
             alt={renderMode === 'cinematic' ? '电影级' : '经典'}
-            className="w-6 h-6 object-contain"
+            className="w-7 h-7 object-contain"
             draggable={false}
           />
           <span className="text-[10px] font-semibold text-slate-700 leading-tight">
