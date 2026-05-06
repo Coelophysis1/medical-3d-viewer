@@ -46,8 +46,11 @@
 │   │       ├── admin/users/      # 用户管理接口
 │   │       │   ├── route.ts
 │   │       │   └── [id]/route.ts
+│   │       ├── admin/delete-logs/ # 管理员删除日志接口
+│   │       │   └── route.ts
 │   │       ├── doctor/           # 医生相关接口
-│   │       │   └── history/route.ts
+│   │       │   ├── history/route.ts
+│   │       │   └── delete-logs/route.ts
 │   │       ├── patient/          # 患者相关接口
 │   │       │   ├── verify/route.ts
 │   │       │   └── [id]/configs/route.ts
@@ -122,6 +125,7 @@
 - 用户列表
 - 创建新用户
 - 重置密码、禁用/启用、删除用户
+- 操作日志 Tab：查看所有医生用户的删除操作记录，支持按用户筛选
 
 ### 8. 医生历史记录页 (`/history`) - 需登录
 - 显示当前用户上传的所有模型配置
@@ -294,6 +298,36 @@
   "data": [
     {
       "id": 1,
+      "operator_name": "doctor1",
+      "config_code": "r7eYa",
+      "config_title": "术前三维重建",
+      "patient_name": "张三",
+      "hospital": "某某医院",
+      "department": "骨科",
+      "model_count": 3,
+      "deleted_files": ["STL文件/xxx/xxx.stl"],
+      "deleted_at": "2026-05-01T10:00:00.000Z"
+    }
+  ]
+}
+```
+
+### 管理员接口（需管理员权限）
+
+#### GET /api/admin/delete-logs
+获取所有用户的删除日志（需管理员权限）
+
+**查询参数：**
+- `operator_id`（可选）：按操作者用户ID筛选
+
+**响应：**
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": 1,
+      "operator_id": 2,
       "operator_name": "doctor1",
       "config_code": "r7eYa",
       "config_title": "术前三维重建",

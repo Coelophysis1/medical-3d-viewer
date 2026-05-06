@@ -317,3 +317,39 @@ export async function getDoctorDeleteLogs(
 
   return { success: true, data: logs || [] };
 }
+
+// 获取所有删除日志（管理员用，支持按操作者筛选）
+export async function getAllDeleteLogs(
+  operatorId?: number,
+): Promise<{ success: boolean; data?: Array<{
+  id: number;
+  operator_id: number;
+  operator_name: string;
+  config_code: string;
+  config_title: string | null;
+  patient_name: string | null;
+  hospital: string | null;
+  department: string | null;
+  model_count: number;
+  deleted_files: string[] | null;
+  deleted_at: string;
+}>; error?: string }> {
+  const client = getSupabaseClient();
+
+  let query = client
+    .from('delete_logs')
+    .select('*');
+
+  if (operatorId) {
+    query = query.eq('operator_id', operatorId);
+  }
+
+  const { data: logs, error: logError } = await query
+    .order('deleted_at', { ascending: false });
+
+  if (logError) {
+    return { success: false, error: `查询删除日志失败: ${logError.message}` };
+  }
+
+  return { success: true, data: logs || [] };
+}
