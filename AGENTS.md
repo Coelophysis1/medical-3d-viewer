@@ -129,6 +129,8 @@
 - 显示标题、患者姓名、医院、科室、日期、模型数量
 - 可查看二维码
 - 可点击查看模型或复制访问链接
+- 删除功能：可删除整条配置记录，同步删除关联的 STL 文件和文件夹
+- 删除日志 Tab：显示所有删除操作记录，不可修改
 
 ## 数据库表结构
 
@@ -180,6 +182,22 @@
 | visible | integer | 是否可见 |
 | sort_order | integer | 排序 |
 | created_at | timestamp | 创建时间 |
+
+### delete_logs
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | serial | 主键 |
+| operator_id | integer | 操作人用户ID |
+| operator_name | text | 操作人用户名 |
+| config_id | integer | 被删除的配置ID |
+| config_code | text | 被删除的配置访问码 |
+| config_title | text | 配置标题 |
+| patient_name | text | 患者姓名 |
+| hospital | text | 医院名称 |
+| department | text | 科室名称 |
+| model_count | integer | 模型数量 |
+| deleted_files | text[] | 被删除的文件路径列表 |
+| deleted_at | timestamp | 删除时间 |
 
 ## API接口
 
@@ -266,6 +284,30 @@
 }
 ```
 
+#### GET /api/doctor/delete-logs
+获取当前登录医生的删除日志（需登录）
+
+**响应：**
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": 1,
+      "operator_name": "doctor1",
+      "config_code": "r7eYa",
+      "config_title": "术前三维重建",
+      "patient_name": "张三",
+      "hospital": "某某医院",
+      "department": "骨科",
+      "model_count": 3,
+      "deleted_files": ["STL文件/xxx/xxx.stl"],
+      "deleted_at": "2026-05-01T10:00:00.000Z"
+    }
+  ]
+}
+```
+
 ### 医疗配置接口
 
 #### POST /api/medical/config
@@ -303,6 +345,20 @@
 
 #### GET /api/medical/config/[code]
 根据访问码获取配置
+
+#### DELETE /api/medical/config/[code]
+删除配置（需登录，仅创建者可删除）
+
+**操作：**
+1. 删除关联的 STL 文件和空目录
+2. 删除数据库中的 medical_models 记录（CASCADE）
+3. 删除 medical_configs 记录
+4. 写入 delete_logs 日志
+
+**响应：**
+```json
+{ "success": true }
+```
 
 ### 文件上传接口
 

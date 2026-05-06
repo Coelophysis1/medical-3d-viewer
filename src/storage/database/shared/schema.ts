@@ -86,3 +86,29 @@ export type InsertMedicalModel = typeof medicalModels.$inferInsert;
 
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
+
+// 删除日志表
+export const deleteLogs = pgTable(
+  "delete_logs",
+  {
+    id: serial("id").primaryKey(),
+    operator_id: integer("operator_id").notNull(),
+    operator_name: text("operator_name").notNull(),
+    config_id: integer("config_id").notNull(),
+    config_code: text("config_code").notNull(),
+    config_title: text("config_title"),
+    patient_name: text("patient_name"),
+    hospital: text("hospital"),
+    department: text("department"),
+    model_count: integer("model_count").default(0),
+    deleted_files: text("deleted_files").array(),
+    deleted_at: timestamp("deleted_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("delete_logs_operator_id_idx").on(table.operator_id),
+    index("delete_logs_deleted_at_idx").on(table.deleted_at),
+  ]
+);
+
+export type DeleteLog = typeof deleteLogs.$inferSelect;
+export type InsertDeleteLog = typeof deleteLogs.$inferInsert;
