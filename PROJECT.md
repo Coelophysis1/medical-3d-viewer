@@ -239,6 +239,8 @@
 - **操作审计**：所有删除操作自动记录到 `delete_logs` 表，包含操作人、配置信息、删除的文件列表
 - **日志不可篡改**：删除日志在界面上只读，无法修改或删除
 - **文件同步清理**：删除配置时自动清理服务器上的 STL 文件和空目录
+- **管理后台 IP 白名单**：通过 `ADMIN_IP_WHITELIST` 环境变量配置，支持 CIDR 格式，未配置则不限制
+- **登录频率限制**：通过 `LOGIN_RATE_LIMIT` 环境变量配置（默认 5次/60秒），超出返回 HTTP 429
 
 ---
 
@@ -251,7 +253,7 @@
 | 3D 渲染 | Three.js (TrackballControls, STLLoader, EffectComposer, SSAO, SMAA, WBOIT) |
 | UI 组件 | shadcn/ui (Radix UI) |
 | 样式 | Tailwind CSS 4 |
-| 数据库 | Supabase (PostgreSQL) |
+| 数据库 | PostgreSQL (pg 驱动直连) |
 | 认证 | JWT Cookie (jose) |
 | 二维码 | qr-code-styling |
 | 文件存储 | 开发环境本地存储，生产环境 S3 对象存储 |

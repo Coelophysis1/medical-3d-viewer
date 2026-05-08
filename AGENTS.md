@@ -12,8 +12,9 @@
 - **3D渲染**: Three.js
 - **UI组件**: shadcn/ui (基于 Radix UI)
 - **样式**: Tailwind CSS 4
-- **数据库**: Supabase (PostgreSQL)
+- **数据库**: PostgreSQL (pg 驱动直连)
 - **认证**: JWT Cookie (jose)
+- **安全**: IP白名单 + 登录频率限制 (middleware)
 - **二维码**: qr-code-styling
 
 ## 项目结构
@@ -71,12 +72,12 @@
 │   │   └── medical.ts            # 医疗模型类型定义
 │   └── storage/
 │       └── database/
-│           ├── supabase-client.ts    # Supabase客户端
+│           ├── db.ts                  # PostgreSQL 连接池 (pg 驱动)
 │           ├── medical-service.ts     # 医疗数据服务
 │           ├── patient-service.ts     # 患者数据服务
 │           ├── user-service.ts        # 用户数据服务
 │           └── shared/
-│               └── schema.ts         # 数据库Schema
+│               └── schema.ts         # 数据库Schema类型
 ├── public/
 │   ├── logo.png                  # 二维码嵌入Logo
 │   └── STL文件/                  # STL文件存储目录
@@ -466,6 +467,10 @@
 ## 环境变量
 
 ```env
+# PostgreSQL 数据库连接（优先使用 DATABASE_URL，未设置则读取系统 PGDATABASE_URL）
+# 自建服务器示例: postgresql://postgres:yourpassword@localhost:5432/medical_3d
+DATABASE_URL=postgresql://user:password@host:port/database
+
 # JWT密钥
 JWT_SECRET=your-jwt-secret-key
 
@@ -475,7 +480,39 @@ ADMIN_PASSWORD=Admin@123456
 
 # 额外初始用户（格式: username:password:role，多个用逗号分隔，首次登录时自动创建）
 INITIAL_USERS=doctor1:Doctor@123:doctor
+
+# 管理后台 IP 白名单（逗号分隔，支持 CIDR 格式，未配置则不限制）
+# ADMIN_IP_WHITELIST=127.0.0.1,192.168.1.0/24,10.0.0.0/8
+
+# 登录频率限制（格式: 次数/秒数，默认 5/60 即 60秒内最多5次）
+# LOGIN_RATE_LIMIT=5/60
 ```
+
+## 安全功能
+
+### 1. 管理后台 IP 白名单
+
+通过 Next.js Middleware 实现，在 `src/middleware.ts` 中配置。
+
+- **环境变量**: `ADMIN_IP_WHITELIST`（逗号分隔，支持 CIDR）
+- **保护路径**: `/admin/*` 和 `/api/admin/*`
+- **未配置**: 不限制（允许所有 IP 访问）
+- **IP 获取**: 依次检查 `X-Forwarded-For`、`X-Real-IP` 头，兜底 `127.0.0.1`
+
+示例：
+```env
+# 仅允许内网和指定IP访问管理后台
+ADMIN_IP_WHITELIST=127.0.0.1,192.168.1.0/24,10.0.0.0/8,203.0.113.50
+```
+
+### 2. 登录频率限制
+
+通过 Next.js Middleware 实现，基于 IP 地址的滑动窗口限流。
+
+- **环境变量**: `LOGIN_RATE_LIMIT`（格式: `次数/秒数`）
+- **默认值**: `5/60`（60秒内最多5次登录尝试）
+- **超出限制**: 返回 HTTP 429 + `Retry-After` 头
+- **自动清理**: 每5分钟清理过期记录
 
 ## 开发命令
 
@@ -512,3 +549,5 @@ pnpm start
 2. **访问码**：自动生成5位字母数字组合
 3. **认证Cookie**：使用CHIPS技术支持iframe环境
 4. **二维码Logo**：存储在 `public/logo.png`
+5. **数据库连接**：优先使用 `DATABASE_URL` 环境变量，未设置则自动读取系统 `PGDATABASE_URL`
+6. **安全**：管理后台支持 IP 白名单（`ADMIN_IP_WHITELIST`），登录接口支持频率限制（`LOGIN_RATE_LIMIT`）

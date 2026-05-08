@@ -1,5 +1,5 @@
-import { getSupabaseClient } from './supabase-client';
-import type { MedicalConfig, ModelConfig } from '@/types/medical';
+import { query, queryOne, insertAndGet, execute } from './db';
+import type { MedicalConfig, ModelConfig, ModelColor } from '@/types/medical';
 
 // 生成随机访问码
 function generateCode(length: number = 5): string {
@@ -13,72 +13,63 @@ function generateCode(length: number = 5): string {
 
 // 创建配置
 export async function createMedicalConfig(config: Omit<MedicalConfig, 'id' | 'code' | 'created_at' | 'updated_at'>): Promise<{ success: boolean; code?: string; url?: string; error?: string }> {
-  const client = getSupabaseClient();
-  
   // 生成唯一访问码
   let code = generateCode();
   let attempts = 0;
   while (attempts < 10) {
-    const { data: existing } = await client
-      .from('medical_configs')
-      .select('id')
-      .eq('code', code)
-      .maybeSingle();
-    
+    const existing = await queryOne('SELECT id FROM medical_configs WHERE code = $1', [code]);
     if (!existing) break;
     code = generateCode();
     attempts++;
   }
-  
+
   // 插入配置记录
-  const { data: configData, error: configError } = await client
-    .from('medical_configs')
-    .insert({
+  const configData = await insertAndGet<{
+    id: number; code: string; title: string;
+  }>(
+    `INSERT INTO medical_configs (code, title, patient_id, creator_id, patient_name, patient_phone, patient_gender, patient_age, hospital, department)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+     RETURNING id, code, title`,
+    [
       code,
-      title: config.title,
-      patient_id: config.patient_id || null,
-      creator_id: config.creator_id || null,
-      patient_name: config.patient_name || null,
-      patient_phone: config.patient_phone || null,
-      patient_gender: config.patient_gender || null,
-      patient_age: config.patient_age || null,
-      hospital: config.hospital || null,
-      department: config.department || null,
-    })
-    .select()
-    .single();
-  
-  if (configError) {
-    return { success: false, error: `创建配置失败: ${configError.message}` };
-  }
-  
-  if (!configData) {
-    return { success: false, error: '创建配置失败: 未返回数据' };
-  }
-  
+      config.title,
+      config.patient_id || null,
+      config.creator_id || null,
+      config.patient_name || null,
+      config.patient_phone || null,
+      config.patient_gender || null,
+      config.patient_age || null,
+      config.hospital || null,
+      config.department || null,
+    ]
+  );
+
   // 插入模型记录
   if (config.models && config.models.length > 0) {
-    const modelRecords = config.models.map((model, index) => ({
-      config_id: configData.id,
-      name: model.name,
-      color: model.color,
-      opacity: Math.round(model.opacity),
-      file_path: model.file_path,
-      visible: model.visible ? 1 : 0,
-      sort_order: index,
-    }));
-    
-    const { error: modelError } = await client
-      .from('medical_models')
-      .insert(modelRecords);
-    
-    if (modelError) {
-      // 回滚配置
-      await client.from('medical_configs').delete().eq('id', configData.id);
-      return { success: false, error: `创建模型失败: ${modelError.message}` };
+    for (let index = 0; index < config.models.length; index++) {
+      const model = config.models[index];
+      try {
+        await execute(
+          `INSERT INTO medical_models (config_id, name, color, opacity, file_path, visible, sort_order)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+          [
+            configData.id,
+            model.name,
+            model.color,
+            Math.round(model.opacity),
+            model.file_path,
+            model.visible ? 1 : 0,
+            index,
+          ]
+        );
+      } catch (modelErr) {
+        // 回滚配置
+        await execute('DELETE FROM medical_configs WHERE id = $1', [configData.id]);
+        return { success: false, error: `创建模型失败: ${modelErr instanceof Error ? modelErr.message : String(modelErr)}` };
+      }
     }
   }
-  
+
   const baseUrl = process.env.COZE_PROJECT_DOMAIN_DEFAULT || 'http://localhost:5000';
   return {
     success: true,
@@ -89,81 +80,69 @@ export async function createMedicalConfig(config: Omit<MedicalConfig, 'id' | 'co
 
 // 获取配置
 export async function getMedicalConfig(code: string): Promise<{ success: boolean; data?: MedicalConfig; error?: string }> {
-  const client = getSupabaseClient();
-  
-  const { data: configData, error: configError } = await client
-    .from('medical_configs')
-    .select('*')
-    .eq('code', code)
-    .maybeSingle();
-  
-  if (configError) {
-    return { success: false, error: `查询配置失败: ${configError.message}` };
-  }
-  
+  const configData = await queryOne<Record<string, unknown>>(
+    'SELECT * FROM medical_configs WHERE code = $1',
+    [code]
+  );
+
   if (!configData) {
     return { success: false, error: '配置不存在' };
   }
-  
-  const { data: modelData, error: modelError } = await client
-    .from('medical_models')
-    .select('*')
-    .eq('config_id', configData.id)
-    .order('sort_order', { ascending: true });
-  
-  if (modelError) {
-    return { success: false, error: `查询模型失败: ${modelError.message}` };
-  }
-  
-  const models: ModelConfig[] = (modelData || []).map(m => ({
-    id: m.id,
-    config_id: m.config_id,
-    name: m.name,
-    color: m.color,
-    opacity: m.opacity,
-    file_path: m.file_path,
+
+  const modelData = await query<Record<string, unknown>>(
+    'SELECT * FROM medical_models WHERE config_id = $1 ORDER BY sort_order ASC',
+    [configData.id]
+  );
+
+  const models: ModelConfig[] = modelData.map(m => ({
+    id: m.id as number,
+    config_id: m.config_id as number,
+    name: m.name as string,
+    color: m.color as ModelColor,
+    opacity: m.opacity as number,
+    file_path: m.file_path as string,
     visible: m.visible === 1,
-    sort_order: m.sort_order,
+    sort_order: m.sort_order as number,
   }));
-  
+
   return {
     success: true,
     data: {
-      id: configData.id,
-      code: configData.code,
-      title: configData.title,
-      patient_name: configData.patient_name,
-      patient_gender: configData.patient_gender,
-      patient_age: configData.patient_age,
-      hospital: configData.hospital,
-      department: configData.department,
+      id: configData.id as number,
+      code: configData.code as string,
+      title: configData.title as string,
+      patient_name: configData.patient_name as string | undefined,
+      patient_gender: configData.patient_gender as string | undefined,
+      patient_age: configData.patient_age as number | undefined,
+      hospital: configData.hospital as string | undefined,
+      department: configData.department as string | undefined,
       models,
-      created_at: configData.created_at,
-      updated_at: configData.updated_at,
+      created_at: configData.created_at as string,
+      updated_at: configData.updated_at as string | undefined,
     },
   };
 }
 
 // 获取医生创建的配置列表
 export async function getDoctorConfigs(creatorId: number): Promise<{ success: boolean; data?: MedicalConfig[]; error?: string }> {
-  const client = getSupabaseClient();
-  
-  const { data: configs, error: configError } = await client
-    .from('medical_configs')
-    .select(`
-      *,
-      medical_models(count)
-    `)
-    .eq('creator_id', creatorId)
-    .order('created_at', { ascending: false });
-  
-  if (configError) {
-    return { success: false, error: `查询配置失败: ${configError.message}` };
-  }
-  
+  const configs = await query<Record<string, unknown>>(
+    `SELECT mc.*, 
+       (SELECT COUNT(*) FROM medical_models mm WHERE mm.config_id = mc.id) as model_count
+     FROM medical_configs mc
+     WHERE mc.creator_id = $1
+     ORDER BY mc.created_at DESC`,
+    [creatorId]
+  );
+
+  // 转换为前端期望的格式（medical_models: [{count: N}]）
+  const result = configs.map(c => ({
+    ...c,
+    medical_models: [{ count: parseInt(String(c.model_count), 10) }],
+  }));
+
   return {
     success: true,
-    data: configs || [],
+    data: result as unknown as MedicalConfig[],
   };
 }
 
@@ -173,16 +152,13 @@ export async function deleteMedicalConfig(
   operatorId: number,
   operatorName: string,
 ): Promise<{ success: boolean; error?: string }> {
-  const client = getSupabaseClient();
+  // 1. 查询配置
+  const configData = await queryOne<Record<string, unknown>>(
+    'SELECT id, code, title, patient_name, hospital, department, creator_id FROM medical_configs WHERE id = $1',
+    [configId]
+  );
 
-  // 1. 查询配置及关联模型
-  const { data: configData, error: configError } = await client
-    .from('medical_configs')
-    .select('id, code, title, patient_name, hospital, department, creator_id')
-    .eq('id', configId)
-    .single();
-
-  if (configError || !configData) {
+  if (!configData) {
     return { success: false, error: '配置不存在' };
   }
 
@@ -191,24 +167,21 @@ export async function deleteMedicalConfig(
     return { success: false, error: '无权删除此配置' };
   }
 
-  const { data: modelData, error: modelError } = await client
-    .from('medical_models')
-    .select('id, file_path')
-    .eq('config_id', configId);
+  // 2. 查询关联模型
+  const modelData = await query<{ file_path: string }>(
+    'SELECT file_path FROM medical_models WHERE config_id = $1',
+    [configId]
+  );
 
-  if (modelError) {
-    return { success: false, error: `查询模型失败: ${modelError.message}` };
-  }
+  const filePaths = modelData.map(m => m.file_path);
+  const modelCount = modelData.length;
 
-  const models = modelData || [];
-  const filePaths = models.map((m: { file_path: string }) => m.file_path);
-  const modelCount = models.length;
-
-  // 2. 删除文件
+  // 3. 删除文件
   const deleteErrors: string[] = [];
   for (const filePath of filePaths) {
     try {
       if (filePath.startsWith('s3://')) {
+        // S3 文件删除（生产环境）
         const { S3Storage } = await import('coze-coding-dev-sdk');
         const storage = new S3Storage({
           endpointUrl: process.env.COZE_BUCKET_ENDPOINT_URL,
@@ -220,6 +193,7 @@ export async function deleteMedicalConfig(
         const s3Key = filePath.slice(5);
         await storage.deleteFile({ fileKey: s3Key });
       } else {
+        // 本地文件删除
         const path = await import('path');
         const { unlink, rmdir, readdir } = await import('fs/promises');
         const { existsSync } = await import('fs');
@@ -250,34 +224,29 @@ export async function deleteMedicalConfig(
     }
   }
 
-  // 3. 删除数据库记录（models 因 ON DELETE CASCADE 会自动删除）
-  const { error: delConfigError } = await client
-    .from('medical_configs')
-    .delete()
-    .eq('id', configId);
+  // 4. 删除数据库记录（models 因 ON DELETE CASCADE 会自动删除）
+  await execute('DELETE FROM medical_configs WHERE id = $1', [configId]);
 
-  if (delConfigError) {
-    return { success: false, error: `删除配置记录失败: ${delConfigError.message}` };
-  }
-
-  // 4. 记录删除日志
-  const { error: logError } = await client
-    .from('delete_logs')
-    .insert({
-      operator_id: operatorId,
-      operator_name: operatorName,
-      config_id: configId,
-      config_code: configData.code,
-      config_title: configData.title,
-      patient_name: configData.patient_name,
-      hospital: configData.hospital,
-      department: configData.department,
-      model_count: modelCount,
-      deleted_files: filePaths.length > 0 ? filePaths : null,
-    });
-
-  if (logError) {
-    console.error('记录删除日志失败:', logError);
+  // 5. 记录删除日志
+  try {
+    await execute(
+      `INSERT INTO delete_logs (operator_id, operator_name, config_id, config_code, config_title, patient_name, hospital, department, model_count, deleted_files)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+      [
+        operatorId,
+        operatorName,
+        configId,
+        configData.code as string,
+        configData.title as string | null,
+        configData.patient_name as string | null,
+        configData.hospital as string | null,
+        configData.department as string | null,
+        modelCount,
+        filePaths.length > 0 ? filePaths : null,
+      ]
+    );
+  } catch (logErr) {
+    console.error('记录删除日志失败:', logErr);
     // 日志写入失败不影响删除结果
   }
 
@@ -303,19 +272,26 @@ export async function getDoctorDeleteLogs(
   deleted_files: string[] | null;
   deleted_at: string;
 }>; error?: string }> {
-  const client = getSupabaseClient();
-
-  const { data: logs, error: logError } = await client
-    .from('delete_logs')
-    .select('*')
-    .eq('operator_id', operatorId)
-    .order('deleted_at', { ascending: false });
-
-  if (logError) {
-    return { success: false, error: `查询删除日志失败: ${logError.message}` };
+  try {
+    const logs = await query<Record<string, unknown>>(
+      'SELECT * FROM delete_logs WHERE operator_id = $1 ORDER BY deleted_at DESC',
+      [operatorId]
+    );
+    return { success: true, data: logs as unknown as Array<{
+      id: number;
+      operator_name: string;
+      config_code: string;
+      config_title: string | null;
+      patient_name: string | null;
+      hospital: string | null;
+      department: string | null;
+      model_count: number;
+      deleted_files: string[] | null;
+      deleted_at: string;
+    }> };
+  } catch (err) {
+    return { success: false, error: `查询删除日志失败: ${err instanceof Error ? err.message : String(err)}` };
   }
-
-  return { success: true, data: logs || [] };
 }
 
 // 获取所有删除日志（管理员用，支持按操作者筛选）
@@ -334,22 +310,32 @@ export async function getAllDeleteLogs(
   deleted_files: string[] | null;
   deleted_at: string;
 }>; error?: string }> {
-  const client = getSupabaseClient();
-
-  let query = client
-    .from('delete_logs')
-    .select('*');
-
-  if (operatorId) {
-    query = query.eq('operator_id', operatorId);
+  try {
+    let logs: Record<string, unknown>[];
+    if (operatorId) {
+      logs = await query(
+        'SELECT * FROM delete_logs WHERE operator_id = $1 ORDER BY deleted_at DESC',
+        [operatorId]
+      );
+    } else {
+      logs = await query(
+        'SELECT * FROM delete_logs ORDER BY deleted_at DESC'
+      );
+    }
+    return { success: true, data: logs as unknown as Array<{
+      id: number;
+      operator_id: number;
+      operator_name: string;
+      config_code: string;
+      config_title: string | null;
+      patient_name: string | null;
+      hospital: string | null;
+      department: string | null;
+      model_count: number;
+      deleted_files: string[] | null;
+      deleted_at: string;
+    }> };
+  } catch (err) {
+    return { success: false, error: `查询删除日志失败: ${err instanceof Error ? err.message : String(err)}` };
   }
-
-  const { data: logs, error: logError } = await query
-    .order('deleted_at', { ascending: false });
-
-  if (logError) {
-    return { success: false, error: `查询删除日志失败: ${logError.message}` };
-  }
-
-  return { success: true, data: logs || [] };
 }
