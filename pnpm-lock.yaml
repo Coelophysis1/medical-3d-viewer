@@ -151,7 +151,7 @@ importers:
         specifier: ^6.0.0
         version: 6.0.0
       '@types/node':
-        specifier: ^20.19.30
+        specifier: ^20
         version: 20.19.30
       '@types/pg':
         specifier: ^8.16.0
