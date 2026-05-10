@@ -1,11 +1,9 @@
 #!/bin/bash
 set -Eeuo pipefail
 
-
 PORT=5000
 COZE_WORKSPACE_PATH="${COZE_WORKSPACE_PATH:-$(pwd)}"
 DEPLOY_RUN_PORT=5000
-
 
 cd "${COZE_WORKSPACE_PATH}"
 
@@ -40,7 +38,24 @@ for mod in "${CRITICAL_MODULES[@]}"; do
     MISSING=1
   fi
 done
+
 if [ "$MISSING" -eq 1 ]; then
+  INSTALL_OUTPUT=$(pnpm install 2>&1) || {
+    if echo "$INSTALL_OUTPUT" | grep -q "ENOTEMPTY"; then
+      echo "ENOTEMPTY detected, cleaning node_modules and retrying..."
+      rm -rf node_modules
+      pnpm install
+    else
+      echo "Install failed: $INSTALL_OUTPUT"
+      exit 1
+    fi
+  }
+fi
+
+# Verify tsx is available
+if ! pnpm tsx --version 2>/dev/null; then
+  echo "WARNING: tsx not found, reinstalling..."
+  rm -rf node_modules
   pnpm install
 fi
 
