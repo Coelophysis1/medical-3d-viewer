@@ -202,7 +202,9 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
 
   // UI 控制状态
   const [renderMode, setRenderMode] = useState<'cinematic' | 'classic'>('classic');
+  const [isAutoRotating, setIsAutoRotating] = useState(false);
   const [bgColorIndex, setBgColorIndex] = useState(2); // 0:黑 1:灰 2:白(默认)
+  const autoRotateRef = useRef(false); // 动画循环中用 ref 读取，避免闭包问题
   // 使用 useRef 避免每次渲染创建新数组
   const bgColorsRef = useRef([
     ['#000000', '#808080', '#ffffff'],  // 经典模式背景色（黑/灰/白）
@@ -406,6 +408,17 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
       // 确保 camera.matrixWorld 在 controls.update() 后同步更新
       // （renderer.render() 会自动更新，但我们需要在 render 之前读取矩阵）
       camera.updateMatrixWorld(true);
+
+      // 自动旋转：绕模型几何中心的 Y 轴逆时针旋转相机
+      if (autoRotateRef.current && sceneRef.current) {
+        const target = sceneRef.current.controls.target;
+        const offset = camera.position.clone().sub(target);
+        const rotSpeed = 0.005; // 每帧旋转弧度
+        // 绕 Y 轴逆时针旋转（从上方看逆时针 = 水平角度增加）
+        offset.applyAxisAngle(new THREE.Vector3(0, 1, 0), rotSpeed);
+        camera.position.copy(target).add(offset);
+        camera.lookAt(target);
+      }
 
       // 灯光跟随摄像机：主光始终在视角左上方，补光在右下方，轮廓光在后方
       const s = sceneRef.current;
@@ -737,6 +750,17 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
     sceneRef.current.camera.updateProjectionMatrix();
   }, []);
 
+  // 旋转展示切换
+  const handleToggleAutoRotate = useCallback(() => {
+    const next = !isAutoRotating;
+    setIsAutoRotating(next);
+    autoRotateRef.current = next;
+    // 开启自动旋转时禁用控制器交互，避免冲突
+    if (sceneRef.current) {
+      sceneRef.current.controls.enabled = !next;
+    }
+  }, [isAutoRotating]);
+
   // 背景切换
   const handleToggleBackground = useCallback(() => {
     if (!sceneRef.current) return;
@@ -899,6 +923,27 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
           />
           <span className="text-[10px] font-semibold text-slate-700 leading-tight">
             {renderMode === 'cinematic' ? '电影渲染' : '经典渲染'}
+          </span>
+        </button>
+
+        <button
+          onClick={handleToggleAutoRotate}
+          className={`group flex flex-col items-center gap-1 w-[72px] py-2.5 rounded-xl border shadow-[0_2px_6px_rgba(0,0,0,0.08)] hover:shadow-[0_4px_12px_rgba(0,0,0,0.12)] active:scale-95 transition-all duration-200 ${
+            isAutoRotating
+              ? 'bg-gradient-to-b from-gray-50 to-gray-100 border-gray-300/80'
+              : 'bg-white border-gray-200/80 hover:border-gray-300'
+          }`}
+          title={isAutoRotating ? '停止旋转' : '旋转展示'}
+        >
+          <img
+            src="/icon-rotate.svg"
+            alt="旋转展示"
+            className={`w-7 h-7 object-contain ${isAutoRotating ? 'animate-spin' : ''}`}
+            style={isAutoRotating ? { animationDuration: '3s' } : undefined}
+            draggable={false}
+          />
+          <span className="text-[10px] font-semibold text-slate-700 leading-tight">
+            {isAutoRotating ? '停止旋转' : '旋转展示'}
           </span>
         </button>
       </div>
