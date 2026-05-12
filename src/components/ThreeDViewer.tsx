@@ -408,18 +408,18 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
       // 自动旋转：镜头绕模型中心 + 垂直屏幕法线旋转
       if (autoRotateRef.current && sceneRef.current) {
         const rotSpeed = 0.008; // 每帧旋转弧度
-        // 旋转中心：模型几何中心（即 controls 初始 target，模型居中后接近原点）
+        // 旋转中心：模型几何中心（即 controls 初始 target）
         const center = sceneRef.current.controls.target;
-        // 旋转轴：垂直屏幕方向的法线（相机视线反方向）
-        const viewDir = new THREE.Vector3();
-        camera.getWorldDirection(viewDir).negate().normalize();
-        // 计算相机到中心的偏移，绕视线法线旋转
+        // 旋转轴：相机局部Y轴（当前视角的垂直向上方向）
+        const upAxis = new THREE.Vector3();
+        upAxis.setFromMatrixColumn(camera.matrixWorld, 1).normalize();
+        // 计算相机到中心的偏移，绕Y轴旋转
         const offset = camera.position.clone().sub(center);
-        offset.applyAxisAngle(viewDir, rotSpeed);
+        offset.applyAxisAngle(upAxis, rotSpeed);
         camera.position.copy(center).add(offset);
         // 同步旋转相机朝向
         camera.quaternion.premultiply(
-          new THREE.Quaternion().setFromAxisAngle(viewDir, rotSpeed)
+          new THREE.Quaternion().setFromAxisAngle(upAxis, rotSpeed)
         );
         camera.updateMatrixWorld(true);
       } else {
