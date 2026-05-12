@@ -404,10 +404,6 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
     const animate = () => {
       if (!sceneRef.current) return;
       sceneRef.current.animationId = requestAnimationFrame(animate);
-      sceneRef.current.controls.update();
-      // 确保 camera.matrixWorld 在 controls.update() 后同步更新
-      // （renderer.render() 会自动更新，但我们需要在 render 之前读取矩阵）
-      camera.updateMatrixWorld(true);
 
       // 自动旋转：镜头绕模型中心 + 垂直屏幕法线旋转
       if (autoRotateRef.current && sceneRef.current) {
@@ -425,6 +421,11 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
         camera.quaternion.premultiply(
           new THREE.Quaternion().setFromAxisAngle(viewDir, rotSpeed)
         );
+        camera.updateMatrixWorld(true);
+      } else {
+        sceneRef.current.controls.update();
+        // 确保 camera.matrixWorld 在 controls.update() 后同步更新
+        camera.updateMatrixWorld(true);
       }
 
       // 灯光跟随摄像机：主光始终在视角左上方，补光在右下方，轮廓光在后方
