@@ -1,9 +1,14 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="6 6 72 72" fill="none">
-  <!-- 旋转圆弧 -->
-  <path d="M42 18 A24 24 0 1 1 22.6 27.2" stroke="#6B7280" stroke-width="4.5" stroke-linecap="round" fill="none"/>
-  <!-- 箭头头部（逆时针方向） -->
-  <polygon points="16,24 26,20 24,32" fill="#6B7280"/>
-  <!-- 中心立方体（代表3D模型） -->
-  <path d="M42 34 L52 39 L52 49 L42 54 L32 49 L32 39 Z" stroke="#6B7280" stroke-width="3" stroke-linejoin="round" fill="#E5E7EB"/>
-  <path d="M42 34 L42 44 M32 39 L42 44 L52 39 M42 44 L42 54" stroke="#6B7280" stroke-width="2.5" stroke-linejoin="round" fill="none"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="8 5 72 76" fill="none">
+  <!-- 垂直旋转轴 -->
+  <line x1="44" y1="10" x2="44" y2="74" stroke="#6B7280" stroke-width="3.5" stroke-linecap="round"/>
+  <!-- 轴顶端小圆 -->
+  <circle cx="44" cy="10" r="2.5" fill="#6B7280"/>
+  <!-- 轴底端小圆 -->
+  <circle cx="44" cy="74" r="2.5" fill="#6B7280"/>
+  <!-- 后半椭圆轨迹（虚线，远离观察者） -->
+  <path d="M20,42 A24,8 0 0 1 68,42" stroke="#6B7280" stroke-width="2" stroke-linecap="round" fill="none" opacity="0.35" stroke-dasharray="5 3.5"/>
+  <!-- 前半椭圆轨迹（实线，靠近观察者） -->
+  <path d="M68,42 A24,8 0 0 1 20,42" stroke="#6B7280" stroke-width="3.5" stroke-linecap="round" fill="none"/>
+  <!-- 逆时针箭头（在前半弧左端点处） -->
+  <polygon points="18,42 26,36 26,48" fill="#6B7280"/>
 </svg>

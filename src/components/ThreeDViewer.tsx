@@ -946,7 +946,7 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
           <img
             src="/icon-rotate.svg"
             alt="旋转展示"
-            className={`w-7 h-7 object-contain ${isAutoRotating ? 'animate-spin' : ''}`}
+            className="w-7 h-7 object-contain"
             style={isAutoRotating ? { animationDuration: '3s' } : undefined}
             draggable={false}
           />
