@@ -23,13 +23,7 @@ export default function VerifyPage() {
     }
 
     if (!phone.trim()) {
-      setError('请输入手机号');
-      return;
-    }
-
-    const phoneRegex = /^1[3-9]\d{9}$/;
-    if (!phoneRegex.test(phone.trim())) {
-      setError('手机号格式不正确');
+      setError('请输入验证号');
       return;
     }
 
@@ -67,7 +61,7 @@ export default function VerifyPage() {
           </div>
           <CardTitle className="text-xl">患者身份验证</CardTitle>
           <CardDescription>
-            请输入您的姓名和手机号查看您的3D模型
+            请输入您的姓名和验证号查看您的3D模型
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -89,17 +83,17 @@ export default function VerifyPage() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="phone">手机号</Label>
+              <Label htmlFor="phone">验证号</Label>
+              <p className="text-xs text-muted-foreground">手机号或身份证号</p>
               <div className="relative">
                 <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                 <Input
                   id="phone"
-                  type="tel"
+                  type="text"
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
-                  placeholder="请输入您的手机号"
+                  placeholder="请输入您的手机号或身份证号"
                   className="pl-10"
-                  maxLength={11}
                   disabled={isLoading}
                 />
               </div>

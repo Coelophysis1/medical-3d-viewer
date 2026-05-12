@@ -334,15 +334,6 @@ export default function UploadPage() {
       }
     }
 
-    // 验证手机号格式
-    if (patientPhone.trim()) {
-      const phoneRegex = /^1[3-9]\d{9}$/;
-      if (!phoneRegex.test(patientPhone.trim())) {
-        setError('手机号格式不正确');
-        return;
-      }
-    }
-
     setIsSubmitting(true);
 
     try {
@@ -517,14 +508,13 @@ export default function UploadPage() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="patientPhone">患者手机号</Label>
+                <Label htmlFor="patientPhone">患者验证号</Label>
+                <p className="text-xs text-muted-foreground">患者手机号/身份证号用于验证查询</p>
                 <Input
                   id="patientPhone"
                   value={patientPhone}
                   onChange={e => setPatientPhone(e.target.value)}
-                  placeholder="例如：13812345678"
-                  type="tel"
-                  maxLength={11}
+                  placeholder="例如：13812345678 或身份证号"
                 />
               </div>
               <div className="space-y-2">
