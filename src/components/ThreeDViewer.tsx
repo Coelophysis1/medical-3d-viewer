@@ -409,13 +409,16 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
       // （renderer.render() 会自动更新，但我们需要在 render 之前读取矩阵）
       camera.updateMatrixWorld(true);
 
-      // 自动旋转：绕模型几何中心的 Y 轴逆时针旋转相机
+      // 自动旋转：绕当前视角的局部坐标系Y轴（垂直地面方向）逆时针旋转
       if (autoRotateRef.current && sceneRef.current) {
         const target = sceneRef.current.controls.target;
         const offset = camera.position.clone().sub(target);
         const rotSpeed = 0.005; // 每帧旋转弧度
-        // 绕 Y 轴逆时针旋转（从上方看逆时针 = 水平角度增加）
-        offset.applyAxisAngle(new THREE.Vector3(0, 1, 0), rotSpeed);
+        // 提取摄像机局部Y轴（当前视角的垂直向上方向）作为旋转轴
+        const camUp = new THREE.Vector3();
+        camUp.setFromMatrixColumn(camera.matrixWorld, 1).normalize();
+        // 绕摄像机局部Y轴旋转，使模型在当前视角下逆时针转动
+        offset.applyAxisAngle(camUp, rotSpeed);
         camera.position.copy(target).add(offset);
         camera.lookAt(target);
       }
