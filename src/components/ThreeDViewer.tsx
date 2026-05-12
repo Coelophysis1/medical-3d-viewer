@@ -763,9 +763,20 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
     const next = !isAutoRotating;
     setIsAutoRotating(next);
     autoRotateRef.current = next;
-    // 开启自动旋转时禁用控制器交互，避免冲突
     if (sceneRef.current) {
-      sceneRef.current.controls.enabled = !next;
+      if (next) {
+        // 开启自动旋转时禁用控制器交互，避免冲突
+        sceneRef.current.controls.enabled = false;
+      } else {
+        // 停止旋转时，将相机重新指向 target 并让 TrackballControls 自然接管
+        // 这样避免了 quaternion 不一致导致的偏移
+        const cam = sceneRef.current.camera;
+        const ctrl = sceneRef.current.controls;
+        cam.lookAt(ctrl.target);
+        cam.updateMatrixWorld(true);
+        // 重新启用控制器
+        ctrl.enabled = true;
+      }
     }
   }, [isAutoRotating]);
 
