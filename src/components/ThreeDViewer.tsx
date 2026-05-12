@@ -409,20 +409,21 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
       // （renderer.render() 会自动更新，但我们需要在 render 之前读取矩阵）
       camera.updateMatrixWorld(true);
 
-      // 自动旋转：镜头绕自身局部Y轴旋转（环绕 target）
+      // 自动旋转：镜头绕模型中心 + 垂直屏幕法线旋转
       if (autoRotateRef.current && sceneRef.current) {
-        const target = sceneRef.current.controls.target;
         const rotSpeed = 0.008; // 每帧旋转弧度
-        // 提取摄像机局部Y轴作为旋转轴
-        const camUp = new THREE.Vector3();
-        camUp.setFromMatrixColumn(camera.matrixWorld, 1).normalize();
-        // 计算相机到target的向量，绕摄像机局部Y轴旋转
-        const offset = camera.position.clone().sub(target);
-        offset.applyAxisAngle(camUp, rotSpeed);
-        camera.position.copy(target).add(offset);
-        // 同步旋转相机朝向，保持观察角度一致
+        // 旋转中心：模型几何中心（即 controls 初始 target，模型居中后接近原点）
+        const center = sceneRef.current.controls.target;
+        // 旋转轴：垂直屏幕方向的法线（相机视线反方向）
+        const viewDir = new THREE.Vector3();
+        camera.getWorldDirection(viewDir).negate().normalize();
+        // 计算相机到中心的偏移，绕视线法线旋转
+        const offset = camera.position.clone().sub(center);
+        offset.applyAxisAngle(viewDir, rotSpeed);
+        camera.position.copy(center).add(offset);
+        // 同步旋转相机朝向
         camera.quaternion.premultiply(
-          new THREE.Quaternion().setFromAxisAngle(camUp, rotSpeed)
+          new THREE.Quaternion().setFromAxisAngle(viewDir, rotSpeed)
         );
       }
 
