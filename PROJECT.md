@@ -4,6 +4,8 @@
 
 本平台是面向医院临床场景的医学三维模型展示系统，支持医生上传 STL 格式的医疗三维模型，配置可视化参数后生成可分享的 3D 展示页面。患者可通过二维码、访问码或身份验证查看自己的模型，医生和管理员可通过后台管理历史记录和用户。
 
+——苏州大学附属第一医院医学3D打印中心
+
 ---
 
 ## 角色体系
@@ -36,6 +38,7 @@
   - 管理员 → 用户管理页 (`/admin/users`)
   - 医生 → 上传页 (`/upload`) 或之前访问的页面
 - 支持重定向参数（`?redirect=/upload`）
+- **登录频率限制**：默认 60 秒内最多 5 次尝试，超出返回 HTTP 429
 
 ---
 
@@ -104,6 +107,7 @@
 | 复位视角 | 恢复默认相机位置和角度 |
 | 切换背景 | 在黑色/灰色/白色（经典）或黑色/灰色/淡灰（电影）间切换 |
 | 经典渲染/电影渲染 | 切换渲染模式，当前模式高亮显示 |
+| 旋转展示 | 开启/关闭模型自动旋转展示，绕当前视角垂直轴逆时针旋转，方便全方位展示 |
 
 #### 背景色配置
 | 背景 | 经典渲染 | 电影渲染 |
@@ -198,6 +202,12 @@
 - **SSAO 环境遮蔽**：增强模型细节的深度感
 - **SMAA 抗锯齿**：后处理抗锯齿 + MSAA 渲染目标
 
+### 旋转展示算法
+- **旋转中心**：模型几何中心（controls.target）
+- **旋转轴**：相机局部 Y 轴（当前视角的垂直向上方向）
+- **旋转速度**：每帧 0.008 弧度（约 13 秒一圈）
+- **交互处理**：旋转时禁用手动控制，停止时无缝切换回 TrackballControls
+
 ### 29 种专业医学颜色
 
 基于 3DSlicer 组织/器官颜色表：
@@ -234,13 +244,31 @@
 
 ## 数据安全与审计
 
+### 认证与授权
 - **JWT Cookie 认证**：基于 jose 库实现，支持 CHIPS 技术（Partitioned Cookie），兼容 iframe 环境
 - **权限控制**：API 层面验证登录状态和角色权限
-- **操作审计**：所有删除操作自动记录到 `delete_logs` 表，包含操作人、配置信息、删除的文件列表
-- **日志不可篡改**：删除日志在界面上只读，无法修改或删除
-- **文件同步清理**：删除配置时自动清理服务器上的 STL 文件和空目录
-- **管理后台 IP 白名单**：通过 `ADMIN_IP_WHITELIST` 环境变量配置，支持 CIDR 格式，未配置则不限制
-- **登录频率限制**：通过 `LOGIN_RATE_LIMIT` 环境变量配置（默认 5次/60秒），超出返回 HTTP 429
+- **密码加密**：使用 bcrypt 进行密码哈希存储
+
+### 操作审计
+- 所有删除操作自动记录到 `delete_logs` 表
+- 记录内容：操作人、配置信息、删除的文件列表、操作时间
+- 删除日志在界面上只读，无法修改或删除
+- 删除配置时自动清理服务器上的 STL 文件和空目录
+
+### 访问控制
+- **管理后台 IP 白名单**：
+  - 环境变量：`ADMIN_IP_WHITELIST`
+  - 支持格式：单个 IP 或 CIDR（如 `192.168.1.0/24`）
+  - 多个地址用逗号分隔
+  - 未配置则不限制访问
+  - 保护路径：`/admin/*` 和 `/api/admin/*`
+
+- **登录频率限制**：
+  - 环境变量：`LOGIN_RATE_LIMIT`（格式：`次数/秒数`）
+  - 默认值：`5/60`（60 秒内最多 5 次登录尝试）
+  - 超出限制返回 HTTP 429 + `Retry-After` 响应头
+  - 基于 IP 地址的滑动窗口算法
+  - 每 5 分钟自动清理过期记录
 
 ---
 
@@ -255,14 +283,127 @@
 | 样式 | Tailwind CSS 4 |
 | 数据库 | PostgreSQL (pg 驱动直连) |
 | 认证 | JWT Cookie (jose) |
+| 密码加密 | bcrypt |
 | 二维码 | qr-code-styling |
 | 文件存储 | 开发环境本地存储，生产环境 S3 对象存储 |
 
+### 数据库连接
+
+支持多种配置方式：
+1. **完整连接串**：`DATABASE_URL=postgresql://user:password@host:port/database`
+2. **系统环境变量**：自动读取 `PGDATABASE_URL`（沙箱环境）
+3. **分离参数**：`DB_HOST`、`DB_PORT`、`DB_USER`、`DB_PASSWORD`、`DB_NAME`
+
+优先级：`DATABASE_URL` > `PGDATABASE_URL` > 分离参数
+
 ---
 
-## 系统截图说明
+## 环境变量配置
 
-### 页面导航关系
+```env
+# 数据库连接（必填）
+DATABASE_URL=postgresql://postgres:yourpassword@localhost:5432/medical_3d
+
+# JWT 密钥（必填，至少 32 位随机字符串）
+JWT_SECRET=your-random-jwt-secret-key-at-least-32-chars
+
+# 初始管理员账号（首次启动时自动创建）
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=Admin@123456
+
+# 初始医生账号（格式：username:password:role，多个用逗号分隔）
+INITIAL_USERS=doctor1:Doctor@123:doctor
+
+# 管理后台 IP 白名单（可选，逗号分隔，支持 CIDR）
+ADMIN_IP_WHITELIST=127.0.0.1,192.168.1.0/24
+
+# 登录频率限制（可选，格式：次数/秒数，默认 5/60）
+LOGIN_RATE_LIMIT=5/60
+
+# 公网域名（用于生成访问链接）
+COZE_PROJECT_DOMAIN_DEFAULT=medical.yourhospital.com
+
+# S3 对象存储（生产环境）
+S3_ENDPOINT=your-s3-endpoint
+S3_REGION=your-region
+S3_BUCKET=your-bucket
+S3_ACCESS_KEY_ID=your-access-key
+S3_SECRET_ACCESS_KEY=your-secret-key
+S3_PUBLIC_URL=https://your-bucket.your-domain.com
+```
+
+---
+
+## 数据库表结构
+
+### users（用户表）
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | serial | 主键 |
+| username | text | 用户名（唯一） |
+| password_hash | text | bcrypt 哈希密码 |
+| role | text | 角色：admin/doctor |
+| status | text | 状态：active/disabled |
+| created_at | timestamp | 创建时间 |
+| updated_at | timestamp | 更新时间 |
+
+### patients（患者表）
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | serial | 主键 |
+| name | text | 患者姓名 |
+| phone | text | 手机号 |
+| created_at | timestamp | 创建时间 |
+
+### medical_configs（模型配置表）
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | serial | 主键 |
+| code | text | 访问码 |
+| title | text | 页面标题 |
+| patient_name | text | 患者姓名 |
+| patient_id | integer | 关联患者 ID |
+| patient_phone | text | 患者手机号 |
+| patient_gender | text | 患者性别 |
+| patient_age | integer | 患者年龄 |
+| hospital | text | 医院名称 |
+| department | text | 科室名称 |
+| creator_id | integer | 创建者用户 ID |
+| created_at | timestamp | 创建时间 |
+| updated_at | timestamp | 更新时间 |
+
+### medical_models（模型表）
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | serial | 主键 |
+| config_id | integer | 关联配置 ID |
+| name | text | 模型名称 |
+| color | text | 渲染颜色 |
+| opacity | integer | 透明度 |
+| file_path | text | STL 文件路径 |
+| visible | integer | 是否可见 |
+| sort_order | integer | 排序 |
+| created_at | timestamp | 创建时间 |
+
+### delete_logs（删除日志表）
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | serial | 主键 |
+| operator_id | integer | 操作人用户 ID |
+| operator_name | text | 操作人用户名 |
+| config_id | integer | 被删除的配置 ID |
+| config_code | text | 被删除的配置访问码 |
+| config_title | text | 配置标题 |
+| patient_name | text | 患者姓名 |
+| hospital | text | 医院名称 |
+| department | text | 科室名称 |
+| model_count | integer | 模型数量 |
+| deleted_files | text[] | 被删除的文件路径列表 |
+| deleted_at | timestamp | 删除时间 |
+
+---
+
+## 页面导航关系
 
 ```
 首页 (/)
@@ -274,4 +415,45 @@
 │   └── 模型列表 (/list?patient_id=xxx)
 │       └── 3D展示 (/view?code=xxx)
 └── 3D展示 (/view?code=xxx) ← 直接通过访问码/二维码访问
+```
+
+---
+
+## 部署说明
+
+### 开发环境
+```bash
+pnpm install
+pnpm dev
+```
+
+### 生产环境
+```bash
+pnpm install --prod
+pnpm build
+pnpm start
+```
+
+### Docker 部署（推荐）
+
+详见项目 `Dockerfile` 和 `docker-compose.yml`。
+
+### 反向代理配置（Nginx）
+
+```nginx
+server {
+    listen 443 ssl http2;
+    server_name medical.yourhospital.com;
+
+    client_max_body_size 100M;  # 支持大文件上传
+
+    location / {
+        proxy_pass http://127.0.0.1:5000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 300s;
+    }
+}
 ```
