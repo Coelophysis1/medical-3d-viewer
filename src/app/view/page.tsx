@@ -39,13 +39,10 @@ function ViewPageContent() {
   const [error, setError] = useState<string | null>(null);
   const [modelVisibility, setModelVisibility] = useState<Record<number, boolean>>({});
   const [modelOpacity, setModelOpacity] = useState<Record<number, number>>({});
-  const [modelVolumes, setModelVolumes] = useState<number[]>([]);
+  const [modelVolumes, setModelVolumes] = useState<{ volume: number; dimX: number; dimY: number; dimZ: number }[]>([]);
   const [panelCollapsed, setPanelCollapsed] = useState(true);
 
   const formatVolume = (vol: number): string => {
-    if (vol >= 1e9) return (vol / 1e9).toFixed(2) + ' × 10⁹';
-    if (vol >= 1e6) return (vol / 1e6).toFixed(2) + ' × 10⁶';
-    if (vol >= 1e3) return (vol / 1e3).toFixed(2) + ' × 10³';
     return vol.toFixed(2);
   };
 
@@ -213,9 +210,10 @@ function ViewPageContent() {
                             className="scale-[0.65] sm:scale-75 origin-right"
                           />
                         </div>
-                        {modelVolumes[index] !== undefined && modelVolumes[index] > 0 && (
+                        {modelVolumes[index] !== undefined && modelVolumes[index].volume > 0 && (
                           <div className="mt-0.5 sm:mt-1 bg-gray-50 rounded px-1 py-0.5 sm:px-1.5 text-[8px] sm:text-[10px] text-gray-600 font-mono">
-                            体积: {formatVolume(modelVolumes[index])} mm³
+                            <div>体积: {formatVolume(modelVolumes[index].volume)} mL</div>
+                            <div>外包围: {modelVolumes[index].dimX.toFixed(1)}×{modelVolumes[index].dimY.toFixed(1)}×{modelVolumes[index].dimZ.toFixed(1)} cm</div>
                           </div>
                         )}
                         <div className="mt-1 sm:mt-1.5 space-y-0.5 sm:space-y-1">
