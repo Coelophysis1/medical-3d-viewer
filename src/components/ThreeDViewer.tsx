@@ -22,7 +22,7 @@ interface ModelMesh {
 
 interface ThreeDViewerProps {
   models: ModelConfig[];
-  onVolumesLoaded?: (dims: {x: number; y: number; z: number}[]) => void;
+  onVolumesLoaded?: (volumes: number[]) => void;
 }
 
 // 手动解析ASCII STL格式
@@ -677,19 +677,10 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
       modelsLoadedRef.current = true;
       initialModelsRef.current = JSON.parse(JSON.stringify(models));
 
-      // 计算每个模型包围盒尺寸并回调
+      // 计算每个模型体积并回调
       if (onVolumesLoaded) {
-        const dims = newMeshes.map(m => {
-          const geo = m.mesh.geometry;
-          geo.computeBoundingBox();
-          const bb = geo.boundingBox!;
-          return {
-            x: Math.round(((bb.max.x - bb.min.x) / 10) * 100) / 100,
-            y: Math.round(((bb.max.y - bb.min.y) / 10) * 100) / 100,
-            z: Math.round(((bb.max.z - bb.min.z) / 10) * 100) / 100,
-          };
-        });
-        onVolumesLoaded(dims);
+        const volumes = newMeshes.map(m => calculateVolume(m.mesh.geometry));
+        onVolumesLoaded(volumes);
       }
 
       // 居中所有模型并调整相机位置（带防抖）

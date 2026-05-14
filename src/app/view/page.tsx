@@ -39,8 +39,15 @@ function ViewPageContent() {
   const [error, setError] = useState<string | null>(null);
   const [modelVisibility, setModelVisibility] = useState<Record<number, boolean>>({});
   const [modelOpacity, setModelOpacity] = useState<Record<number, number>>({});
-  const [modelDims, setModelDims] = useState<{x: number; y: number; z: number}[]>([]);
+  const [modelVolumes, setModelVolumes] = useState<number[]>([]);
   const [panelCollapsed, setPanelCollapsed] = useState(true);
+
+  const formatVolume = (vol: number): string => {
+    if (vol >= 1e9) return (vol / 1e9).toFixed(2) + ' × 10⁹';
+    if (vol >= 1e6) return (vol / 1e6).toFixed(2) + ' × 10⁶';
+    if (vol >= 1e3) return (vol / 1e3).toFixed(2) + ' × 10³';
+    return vol.toFixed(2);
+  };
 
   useEffect(() => {
     if (!code) {
@@ -148,7 +155,7 @@ function ViewPageContent() {
               visible: modelVisibility[i] ?? m.visible,
               opacity: modelOpacity[i] ?? m.opacity,
             }))}
-            onVolumesLoaded={(dims) => setModelDims(dims)}
+            onVolumesLoaded={(volumes) => setModelVolumes(volumes)}
           />
         </div>
 
@@ -206,9 +213,9 @@ function ViewPageContent() {
                             className="scale-[0.65] sm:scale-75 origin-right"
                           />
                         </div>
-                        {modelDims[index] !== undefined && (
+                        {modelVolumes[index] !== undefined && modelVolumes[index] > 0 && (
                           <div className="mt-0.5 sm:mt-1 bg-gray-50 rounded px-1 py-0.5 sm:px-1.5 text-[8px] sm:text-[10px] text-gray-600 font-mono">
-                            体积={modelDims[index].x}*{modelDims[index].y}*{modelDims[index].z} cm³
+                            体积: {formatVolume(modelVolumes[index])} mm³
                           </div>
                         )}
                         <div className="mt-1 sm:mt-1.5 space-y-0.5 sm:space-y-1">
