@@ -39,15 +39,8 @@ function ViewPageContent() {
   const [error, setError] = useState<string | null>(null);
   const [modelVisibility, setModelVisibility] = useState<Record<number, boolean>>({});
   const [modelOpacity, setModelOpacity] = useState<Record<number, number>>({});
-  const [modelVolumes, setModelVolumes] = useState<number[]>([]);
+  const [modelVolumes, setModelVolumes] = useState<{ x: number; y: number; z: number }[]>([]);
   const [panelCollapsed, setPanelCollapsed] = useState(true);
-
-  const formatVolume = (vol: number): string => {
-    if (vol >= 1e9) return (vol / 1e9).toFixed(2) + ' × 10⁹';
-    if (vol >= 1e6) return (vol / 1e6).toFixed(2) + ' × 10⁶';
-    if (vol >= 1e3) return (vol / 1e3).toFixed(2) + ' × 10³';
-    return vol.toFixed(2);
-  };
 
   useEffect(() => {
     if (!code) {
