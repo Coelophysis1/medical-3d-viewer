@@ -405,28 +405,32 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
       if (!sceneRef.current) return;
       sceneRef.current.animationId = requestAnimationFrame(animate);
 
-      // 自动旋转：镜头绕模型中心 + 垂直屏幕法线旋转
+      // 自动旋转：旋转模型组，相机不动，避免 controls 冲突
       if (autoRotateRef.current && sceneRef.current) {
         const rotSpeed = 0.008; // 每帧旋转弧度
-        // 旋转中心：模型几何中心（即 controls 初始 target）
         const center = sceneRef.current.controls.target;
         // 旋转轴：相机局部Y轴（当前视角的垂直向上方向）
         const upAxis = new THREE.Vector3();
         upAxis.setFromMatrixColumn(camera.matrixWorld, 1).normalize();
-        // 计算相机到中心的偏移，绕Y轴旋转
-        const offset = camera.position.clone().sub(center);
-        offset.applyAxisAngle(upAxis, rotSpeed);
-        camera.position.copy(center).add(offset);
-        // 同步旋转相机朝向
-        camera.quaternion.premultiply(
-          new THREE.Quaternion().setFromAxisAngle(upAxis, rotSpeed)
-        );
-        camera.updateMatrixWorld(true);
-      } else {
+        // 绕 center + upAxis 旋转所有模型 mesh
+        const rotQuat = new THREE.Quaternion().setFromAxisAngle(upAxis, rotSpeed);
+        for (const item of sceneRef.current.meshes) {
+          const mesh = item.mesh;
+          // 先将 mesh 绕 center 旋转：平移到 center 为原点，旋转，平移回去
+          mesh.position.sub(center);
+          mesh.position.applyQuaternion(rotQuat);
+          mesh.position.add(center);
+          // 旋转自身朝向
+          mesh.quaternion.premultiply(rotQuat);
+        }
+        // 不跳过 controls.update()，保持 controls 与相机同步
         sceneRef.current.controls.update();
-        // 确保 camera.matrixWorld 在 controls.update() 后同步更新
         camera.updateMatrixWorld(true);
       }
+
+      // controls 始终正常更新，旋转模型与 controls 互不干扰
+      sceneRef.current.controls.update();
+      camera.updateMatrixWorld(true);
 
       // 灯光跟随摄像机：主光始终在视角左上方，补光在右下方，轮廓光在后方
       const s = sceneRef.current;
@@ -769,28 +773,7 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
     const next = !isAutoRotating;
     setIsAutoRotating(next);
     autoRotateRef.current = next;
-    if (sceneRef.current) {
-      if (next) {
-        // 开启自动旋转时禁用控制器交互，避免冲突
-        sceneRef.current.controls.enabled = false;
-      } else {
-        // 停止旋转时，同步 TrackballControls 内部状态，避免偏移
-        const cam = sceneRef.current.camera;
-        const ctrl = sceneRef.current.controls;
-        cam.lookAt(ctrl.target);
-        cam.updateMatrixWorld(true);
-        // 同步 TrackballControls 内部 _eye 向量
-        // update() 开头会用 _eye = position - target 重新计算，
-        // 但在 update() 内部的 _rotateCamera/_zoomCamera/_panCamera 
-        // 可能修改 _eye 后用新 _eye 重设 position，导致偏移。
-        // 手动同步 _eye 确保下一帧 update() 从当前位置出发
-        (ctrl as unknown as { _eye: THREE.Vector3 })._eye.subVectors(cam.position, ctrl.target);
-        // 重置 controls 内部状态，防止残留输入导致额外旋转
-        (ctrl as unknown as { state: number }).state = -1;
-        // 重新启用控制器
-        ctrl.enabled = true;
-      }
-    }
+    // 旋转模型不影响相机/controls，无需同步操作
   }, [isAutoRotating]);
 
   // 背景切换
