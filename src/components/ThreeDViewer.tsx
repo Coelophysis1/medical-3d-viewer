@@ -774,21 +774,14 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
         // 开启自动旋转时禁用控制器交互，避免冲突
         sceneRef.current.controls.enabled = false;
       } else {
-        // 停止旋转时，同步 TrackballControls 内部状态，消除惯性偏移
+        // 停止旋转时，将相机重新指向 target 并让 TrackballControls 自然接管
+        // 这样避免了 quaternion 不一致导致的偏移
         const cam = sceneRef.current.camera;
         const ctrl = sceneRef.current.controls;
-        // 先让 controls 从当前相机位置同步 _eye
-        ctrl.update();
-        // 重置 controls 内部所有操作状态，消除惯性/残留偏移
-        (ctrl as unknown as Record<string, unknown>)._rotateStart = (ctrl as unknown as Record<string, unknown>)._rotateEnd;
-        (ctrl as unknown as Record<string, unknown>)._panStart = (ctrl as unknown as Record<string, unknown>)._panEnd;
-        (ctrl as unknown as Record<string, unknown>)._zoomStart = (ctrl as unknown as Record<string, unknown>)._zoomEnd;
-        (ctrl as unknown as Record<string, unknown>)._lastAngle = 0;
-        // 重新记录当前位置作为 controls 的稳定起点
         cam.lookAt(ctrl.target);
         cam.updateMatrixWorld(true);
+        // 重新启用控制器
         ctrl.enabled = true;
-        ctrl.update();
       }
     }
   }, [isAutoRotating]);
