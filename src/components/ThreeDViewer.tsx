@@ -774,12 +774,19 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
         // 开启自动旋转时禁用控制器交互，避免冲突
         sceneRef.current.controls.enabled = false;
       } else {
-        // 停止旋转时，将相机重新指向 target 并让 TrackballControls 自然接管
-        // 这样避免了 quaternion 不一致导致的偏移
+        // 停止旋转时，同步 TrackballControls 内部状态，避免偏移
         const cam = sceneRef.current.camera;
         const ctrl = sceneRef.current.controls;
         cam.lookAt(ctrl.target);
         cam.updateMatrixWorld(true);
+        // 同步 TrackballControls 内部 _eye 向量
+        // update() 开头会用 _eye = position - target 重新计算，
+        // 但在 update() 内部的 _rotateCamera/_zoomCamera/_panCamera 
+        // 可能修改 _eye 后用新 _eye 重设 position，导致偏移。
+        // 手动同步 _eye 确保下一帧 update() 从当前位置出发
+        (ctrl as unknown as { _eye: THREE.Vector3 })._eye.subVectors(cam.position, ctrl.target);
+        // 重置 controls 内部状态，防止残留输入导致额外旋转
+        (ctrl as unknown as { state: number }).state = -1;
         // 重新启用控制器
         ctrl.enabled = true;
       }
