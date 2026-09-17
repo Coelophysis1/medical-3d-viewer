@@ -38,11 +38,12 @@ export async function POST(request: NextRequest) {
     
     const user = result.user!;
     
-    // 签发 JWT
+    // 签发 JWT（包含 token_version 用于后续撤销校验）
     const token = await signToken({
       userId: user.id,
       username: user.username,
       role: user.role as 'admin' | 'doctor',
+      tv: (user as Record<string, unknown>).token_version as number ?? 0,
     });
     
     // 创建响应并设置 Cookie

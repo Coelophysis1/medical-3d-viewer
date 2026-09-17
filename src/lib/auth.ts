@@ -4,8 +4,6 @@ import { getUserById } from '@/storage/database/user-service';
 import type { User } from '@/storage/database/shared/schema';
 
 // JWT 配置
-// 默认密钥：部署端可能没有 .env.local，需要硬编码默认值确保功能可用
-const DEFAULT_JWT_SECRET = 'medical-3d-viewer-jwt-secret-key-for-production-2024';
 const COOKIE_NAME = 'token';
 const TOKEN_EXPIRES_IN = '7d'; // 7天过期
 
@@ -14,14 +12,21 @@ export interface JWTPayload {
   userId: number;
   username: string;
   role: 'admin' | 'doctor';
+  tv: number; // token version，用于 Token 撤销
   [key: string]: unknown; // 添加索引签名以兼容 jose
 }
 
 // 获取 JWT 密钥（Uint8Array 格式）
-// 运行时读取环境变量，未配置则使用默认值
+// 强制要求环境变量 JWT_SECRET 存在且长度 ≥ 32，否则拒绝启动
+let cachedSecret: Uint8Array | null = null;
 function getSecretKey(): Uint8Array {
-  const secret = process.env.JWT_SECRET || DEFAULT_JWT_SECRET;
-  return new TextEncoder().encode(secret);
+  if (cachedSecret) return cachedSecret;
+  const secret = process.env.JWT_SECRET;
+  if (!secret || secret.length < 32) {
+    throw new Error('JWT_SECRET 环境变量未设置或长度不足32位，服务器拒绝启动');
+  }
+  cachedSecret = new TextEncoder().encode(secret);
+  return cachedSecret;
 }
 
 // 签发 JWT Token
@@ -63,6 +68,13 @@ export async function getCurrentUser(request: NextRequest): Promise<User | null>
   }
   
   const user = await getUserById(payload.userId);
+  if (!user) return null;
+
+  // Token 版本校验：如果 JWT 中有 tv 字段，比对数据库当前版本
+  // 旧 Token（无 tv 字段）视为失效，强制重新登录
+  if (payload.tv === undefined || payload.tv !== (user as Record<string, unknown>).token_version) {
+    return null;
+  }
   
   return user;
 }
@@ -106,16 +118,28 @@ export async function requireAdmin(request: NextRequest): Promise<AuthResult> {
 
 // 设置登录 Cookie
 export function setAuthCookie(response: NextResponse, token: string): void {
-  // 使用 SameSite=None + Partitioned 以支持 iframe 环境（如 Coze 预览）
-  // 参考文档: https://developer.chrome.com/docs/privacy-sandbox/chips/
-  response.cookies.set(COOKIE_NAME, token, {
-    httpOnly: true,
-    secure: true,  // 必须为 true 才能使用 SameSite=None
-    sameSite: 'none',  // 允许跨站请求（iframe 场景）
-    partitioned: true,  // CHIPS: 独立分区存储，支持 iframe
-    maxAge: 7 * 24 * 60 * 60, // 7天
-    path: '/',
-  });
+  const isProduction = process.env.NODE_ENV === 'production';
+
+  if (isProduction) {
+    // 生产环境：使用 SameSite=None + Partitioned 以支持 iframe 环境
+    response.cookies.set(COOKIE_NAME, token, {
+      httpOnly: true,
+      secure: true,
+      sameSite: 'none',
+      partitioned: true,
+      maxAge: 7 * 24 * 60 * 60,
+      path: '/',
+    });
+  } else {
+    // 开发环境：允许 HTTP，使用 Lax 以支持本地登录
+    response.cookies.set(COOKIE_NAME, token, {
+      httpOnly: true,
+      secure: false,
+      sameSite: 'lax',
+      maxAge: 7 * 24 * 60 * 60,
+      path: '/',
+    });
+  }
 }
 
 // 清除登录 Cookie

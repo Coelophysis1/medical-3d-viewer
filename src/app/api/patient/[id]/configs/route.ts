@@ -1,11 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getPatientConfigs, getPatientById } from '@/storage/database/patient-service';
+import { requireAuth, unauthorizedResponse } from '@/lib/auth';
 
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    // 认证检查
+    const authResult = await requireAuth(request);
+    if (!authResult.success) {
+      return unauthorizedResponse(authResult.error);
+    }
+
     const { id } = await params;
     const patientId = parseInt(id, 10);
 

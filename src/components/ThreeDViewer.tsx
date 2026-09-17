@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import * as THREE from 'three';
 import { TrackballControls } from 'three/examples/jsm/controls/TrackballControls.js';
+import { MeasurementManager, type Measurement } from '@/lib/MeasurementManager';
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
@@ -10,7 +11,7 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { SSAOPass } from 'three/examples/jsm/postprocessing/SSAOPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { SMAAPass } from 'three/examples/jsm/postprocessing/SMAAPass.js';
-import { getModelColor, ModelConfig, COLOR_MAP } from '@/types/medical';
+import { getModelColor, ModelConfig } from '@/types/medical';
 import { WBOITRenderer } from '@/lib/wboit';
 
 interface ModelMesh {
@@ -41,18 +42,21 @@ function parseASCIISTL(text: string): THREE.BufferGeometry {
     
     const vertexRegex = /vertex\s+([\-+]?[\d]+\.?[\d]*)\s+([\-+]?[\d]+\.?[\d]*)\s+([\-+]?[\d]+\.?[\d]*)/g;
     let vertexMatch;
-    let vertexCount = 0;
-    
+    const facetVertices: number[] = [];
+
     while ((vertexMatch = vertexRegex.exec(vertexBlock)) !== null) {
-      vertexCount++;
-      vertices.push(
+      facetVertices.push(
         parseFloat(vertexMatch[1]),
         parseFloat(vertexMatch[2]),
         parseFloat(vertexMatch[3])
       );
     }
-    
-    if (vertexCount === 3) {
+
+    // 仅收录完整的三角形面片（9个分量），避免 position 与 normal 数组错位
+    if (facetVertices.length === 9) {
+      vertices.push(facetVertices[0], facetVertices[1], facetVertices[2],
+                    facetVertices[3], facetVertices[4], facetVertices[5],
+                    facetVertices[6], facetVertices[7], facetVertices[8]);
       normals.push(nx, ny, nz, nx, ny, nz, nx, ny, nz);
     }
   }
@@ -68,6 +72,74 @@ function parseASCIISTL(text: string): THREE.BufferGeometry {
   }
   
   return geometry;
+}
+
+/**
+ * 清理几何体中的无效顶点（NaN/Infinity）
+ * 部分 STL 文件本身包含无效顶点，会导致 Three.js 的
+ * computeBoundingSphere / computeBoundingBox 报 NaN 错误。
+ * 逐三角形检查：过滤含无效顶点的三角形，同步重建 position 与 normal 属性。
+ * 返回清理后的新几何体（若无需清理则原样返回）及被过滤的三角形数量。
+ */
+function sanitizeGeometry(geometry: THREE.BufferGeometry): { geometry: THREE.BufferGeometry; removed: number } {
+  const position = geometry.getAttribute('position');
+  if (!position || position.count === 0) return { geometry, removed: 0 };
+
+  const isValidVertex = (
+    attr: THREE.BufferAttribute | THREE.InterleavedBufferAttribute,
+    index: number
+  ) =>
+    Number.isFinite(attr.getX(index)) &&
+    Number.isFinite(attr.getY(index)) &&
+    Number.isFinite(attr.getZ(index));
+
+  // 收集所有"三个顶点均有效"的三角形顶点索引
+  const validIndices: number[] = [];
+  let removed = 0;
+  for (let i = 0; i < position.count; i += 3) {
+    if (
+      isValidVertex(position, i) &&
+      isValidVertex(position, i + 1) &&
+      isValidVertex(position, i + 2)
+    ) {
+      validIndices.push(i, i + 1, i + 2);
+    } else {
+      removed++;
+    }
+  }
+
+  // 无无效顶点，直接返回原几何体
+  if (removed === 0) return { geometry, removed: 0 };
+
+  console.warn(`[sanitizeGeometry] 过滤了 ${removed} 个含 NaN/Infinity 顶点的三角形`);
+
+  // 重建 position
+  const newPos = new Float32Array(validIndices.length * 3);
+  for (let j = 0; j < validIndices.length; j++) {
+    newPos[j * 3] = position.getX(validIndices[j]);
+    newPos[j * 3 + 1] = position.getY(validIndices[j]);
+    newPos[j * 3 + 2] = position.getZ(validIndices[j]);
+  }
+  const newGeometry = new THREE.BufferGeometry();
+  newGeometry.setAttribute('position', new THREE.BufferAttribute(newPos, 3));
+
+  // 同步重建 normal（保持逐顶点对齐）
+  const normal = geometry.getAttribute('normal');
+  if (normal && normal.count === position.count) {
+    const newNorm = new Float32Array(validIndices.length * 3);
+    for (let j = 0; j < validIndices.length; j++) {
+      newNorm[j * 3] = normal.getX(validIndices[j]);
+      newNorm[j * 3 + 1] = normal.getY(validIndices[j]);
+      newNorm[j * 3 + 2] = normal.getZ(validIndices[j]);
+    }
+    newGeometry.setAttribute('normal', new THREE.BufferAttribute(newNorm, 3));
+  } else {
+    newGeometry.computeVertexNormals();
+  }
+
+  // 释放旧几何体资源
+  geometry.dispose();
+  return { geometry: newGeometry, removed };
 }
 
 // 计算闭合三角网格体积（有符号体积法）
@@ -87,8 +159,19 @@ function calculateVolume(geometry: THREE.BufferGeometry): number {
     v2.fromBufferAttribute(position, i + 1);
     v3.fromBufferAttribute(position, i + 2);
 
+    // 双保险：跳过含 NaN/Infinity 顶点的三角形
+    if (
+      !Number.isFinite(v1.x) || !Number.isFinite(v1.y) || !Number.isFinite(v1.z) ||
+      !Number.isFinite(v2.x) || !Number.isFinite(v2.y) || !Number.isFinite(v2.z) ||
+      !Number.isFinite(v3.x) || !Number.isFinite(v3.y) || !Number.isFinite(v3.z)
+    ) {
+      continue;
+    }
+
     cross.crossVectors(v1, v2);
-    volume += cross.dot(v3);
+    const tetraVolume = cross.dot(v3);
+    if (!Number.isFinite(tetraVolume)) continue; // 叉积溢出等极端情况同样跳过
+    volume += tetraVolume;
   }
 
   return Math.abs(volume) / 6;
@@ -181,6 +264,7 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
     renderPass: RenderPass;
     outputPass: OutputPass;
     smaaPass: SMAAPass;
+    measurementManager: MeasurementManager;
   } | null>(null);
   // 手动保存初始相机状态，用于复位
   const savedCameraState = useRef<{
@@ -203,8 +287,17 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
   // UI 控制状态
   const [renderMode, setRenderMode] = useState<'cinematic' | 'classic'>('classic');
   const [isAutoRotating, setIsAutoRotating] = useState(false);
+  const [isMeasuring, setIsMeasuring] = useState(false);
+  const [measurements, setMeasurements] = useState<Measurement[]>([]);
+  const [measurePanelCollapsed, setMeasurePanelCollapsed] = useState(false);
+  const measurePanelPosRef = useRef<{ x: number; y: number } | null>(null); // null = 使用默认位置
+  const measurePanelDragRef = useRef<{ startX: number; startY: number; origX: number; origY: number } | null>(null);
+  const measurePanelElRef = useRef<HTMLDivElement | null>(null);
+  // 累积旋转四元数（用于 Gizmo 跟随模型旋转）
+  const cumulativeRotRef = useRef(new THREE.Quaternion());
   const [bgColorIndex, setBgColorIndex] = useState(2); // 0:黑 1:灰 2:白(默认)
   const autoRotateRef = useRef(false); // 动画循环中用 ref 读取，避免闭包问题
+  const isMeasuringRef = useRef(false); // 测距模式 ref
   // 使用 useRef 避免每次渲染创建新数组
   const bgColorsRef = useRef([
     ['#000000', '#808080', '#ffffff'],  // 经典模式背景色（黑/灰/白）
@@ -222,7 +315,8 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
     scene.background = new THREE.Color(0xffffff);
 
     const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 10000);
-    camera.position.set(200, 200, 200);
+    camera.up.set(0, 0, 1);  // Z轴朝上（Superior），仿 3D Slicer RAS 坐标系
+    camera.position.set(-180, -250, 110);  // 从左后上方观察(15°仰角)
     camera.lookAt(0, 0, 0);
 
     // ──────────────────────────────────────────────
@@ -376,6 +470,14 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
     // 经典模式默认禁用 composer（使用 renderer.render 直出，保留 MSAA 抗锯齿）
     wboitRenderer.setComposerEnabled(false);
 
+    // ──────────────────────────────────────────────
+    //  7. MeasurementManager（划线测距）
+    // ──────────────────────────────────────────────
+    const measurementManager = new MeasurementManager(scene, camera, () => {
+      setMeasurements([...measurementManager.getMeasurements()]);
+    });
+    measurementManager.setContainer(containerRef.current!);
+
     sceneRef.current = {
       scene,
       camera,
@@ -399,6 +501,7 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
       renderPass,
       outputPass,
       smaaPass,
+      measurementManager,
     };
 
     const animate = () => {
@@ -423,6 +526,11 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
           // 旋转自身朝向
           mesh.quaternion.premultiply(rotQuat);
         }
+        // 同步旋转测距对象（逐个旋转，不旋转 Group 整体，避免新测距点偏移）
+        const mm = sceneRef.current.measurementManager;
+        mm.applyRotation(rotQuat, center);
+        // 累积旋转（供 Gizmo 使用）
+        cumulativeRotRef.current.premultiply(rotQuat);
         // 不跳过 controls.update()，保持 controls 与相机同步
         sceneRef.current.controls.update();
         camera.updateMatrixWorld(true);
@@ -471,10 +579,13 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
       sceneRef.current.renderer.setScissor(0, 0, gizmoViewPx, gizmoViewPx);
       sceneRef.current.renderer.clearDepth();
 
-      sceneRef.current.gizmoAxes.quaternion.copy(camera.quaternion).invert();
+      sceneRef.current.gizmoAxes.quaternion.copy(camera.quaternion).invert().multiply(cumulativeRotRef.current);
       sceneRef.current.renderer.render(gizmoScene, gizmoCamera);
 
       sceneRef.current.renderer.setScissorTest(false);
+
+      // 3. 渲染测距 CSS2D 标签
+      sceneRef.current.measurementManager.render();
     };
     animate();
 
@@ -489,12 +600,71 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
       sceneRef.current.composer.setSize(newWidth, newHeight);
       // SSAOPass 需要更新分辨率
       sceneRef.current.ssaoPass.setSize(newWidth, newHeight);
+      sceneRef.current.measurementManager.setSize(newWidth, newHeight);
     };
 
     window.addEventListener('resize', handleResize);
 
+    // ──────────────────────────────────────────────
+    //  测距模式事件
+    // ──────────────────────────────────────────────
+    const handleMeasureClick = (clientX: number, clientY: number) => {
+      if (!isMeasuringRef.current || !sceneRef.current) return;
+      const mm = sceneRef.current.measurementManager;
+      const canvas = renderer.domElement;
+      const handled = mm.handleClick({ clientX, clientY }, canvas);
+      if (handled) {
+        setMeasurements([...mm.getMeasurements()]);
+        // 完成一条线段后（无 pending 起点）自动退出测距模式
+        if (!mm.hasPending()) {
+          isMeasuringRef.current = false;
+          setIsMeasuring(false);
+          mm.setActive(false);
+        }
+      }
+    };
+
+    const handleCanvasClick = (event: MouseEvent) => {
+      if (event.button !== 0) return;
+      handleMeasureClick(event.clientX, event.clientY);
+    };
+
+    const handleCanvasTouch = (event: TouchEvent) => {
+      if (!isMeasuringRef.current || !sceneRef.current) return;
+      if (event.touches.length !== 1) return;
+      event.preventDefault();
+      const touch = event.touches[0];
+      handleMeasureClick(touch.clientX, touch.clientY);
+    };
+
+    const handleCanvasMouseMove = (event: MouseEvent) => {
+      if (!isMeasuringRef.current || !sceneRef.current) return;
+      const mm = sceneRef.current.measurementManager;
+      const canvas = renderer.domElement;
+      mm.handleMouseMove(event, canvas);
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (!isMeasuringRef.current || !sceneRef.current) return;
+      if (event.key === 'Escape') {
+        const mm = sceneRef.current.measurementManager;
+        mm.cancelPending();
+        setMeasurements([...mm.getMeasurements()]);
+      }
+    };
+
+    const canvas = renderer.domElement;
+    canvas.addEventListener('click', handleCanvasClick);
+    canvas.addEventListener('touchend', handleCanvasTouch);
+    canvas.addEventListener('mousemove', handleCanvasMouseMove);
+    window.addEventListener('keydown', handleKeyDown);
+
     return () => {
       window.removeEventListener('resize', handleResize);
+      canvas.removeEventListener('click', handleCanvasClick);
+      canvas.removeEventListener('touchend', handleCanvasTouch);
+      canvas.removeEventListener('mousemove', handleCanvasMouseMove);
+      window.removeEventListener('keydown', handleKeyDown);
       if (sceneRef.current) {
         cancelAnimationFrame(sceneRef.current.animationId);
         sceneRef.current.wboitRenderer.dispose();
@@ -602,6 +772,14 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
             const loader = new STLLoader();
             geometry = loader.parse(arrayBuffer);
           }
+
+          // 清理无效顶点（NaN/Infinity）：NaN 顶点不进入场景，
+          // 防止渲染（computeBoundingSphere）与体积计算（computeBoundingBox）报错
+          const sanitized = sanitizeGeometry(geometry);
+          if (sanitized.removed > 0) {
+            console.warn(`模型 ${config.name}: 清理了 ${sanitized.removed} 个无效三角形`);
+          }
+          geometry = sanitized.geometry;
           
           const isTransparent = config.opacity < 100;
           const colorValue = getModelColor(config.color);
@@ -681,13 +859,20 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
       modelsLoadedRef.current = true;
       initialModelsRef.current = JSON.parse(JSON.stringify(models));
 
-      // 计算每个模型体积并回调
+      // 设置 MeasurementManager 的 meshes 引用
+      if (sceneRef.current?.measurementManager) {
+        sceneRef.current.measurementManager.setMeshes(newMeshes.map(m => m.mesh));
+      }
+
+      // 计算每个模型体积并回调（使用原始几何体坐标，避免scale影响）
       if (onVolumesLoaded) {
         const volumeData = newMeshes.map(m => {
           const vol = calculateVolume(m.mesh.geometry);
-          const box = new THREE.Box3().setFromObject(m.mesh);
+          // 从原始几何体计算包围盒，避免mesh.scale影响
+          m.mesh.geometry.computeBoundingBox();
+          const geoBox = m.mesh.geometry.boundingBox!;
           const size = new THREE.Vector3();
-          box.getSize(size);
+          geoBox.getSize(size);
           return { volume: vol, dimX: size.x, dimY: size.y, dimZ: size.z };
         });
         onVolumesLoaded(volumeData);
@@ -712,6 +897,11 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
           m.mesh.scale.setScalar(scale);
         });
 
+        // 保存缩放比例供测距使用
+        if (sceneRef.current?.measurementManager) {
+          sceneRef.current.measurementManager.setScale(scale);
+        }
+
         const scaledBox = new THREE.Box3();
         newMeshes.forEach(m => scaledBox.expandByObject(m.mesh));
         const scaledCenter = scaledBox.getCenter(new THREE.Vector3());
@@ -725,13 +915,14 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
         const distH = scaledMaxDim / (2 * Math.tan(fovRad / 2) * aspect);
         const fitDistance = Math.max(distV, distH) * 1.5;
 
-        const azimuth = Math.PI / 4;
-        const elevation = Math.PI / 6;
+        // 仿 3D Slicer 3D 视图：从左后上方观察（看到右、前、上面）
+        const azimuth = Math.PI * 5 / 6;   // 150° — 偏左后方向
+        const elevation = Math.PI / 12;     // 15° 仰角
 
         camera.position.set(
           scaledCenter.x + fitDistance * Math.cos(elevation) * Math.sin(azimuth),
-          scaledCenter.y + fitDistance * Math.sin(elevation),
-          scaledCenter.z + fitDistance * Math.cos(elevation) * Math.cos(azimuth)
+          scaledCenter.y + fitDistance * Math.cos(elevation) * Math.cos(azimuth),
+          scaledCenter.z + fitDistance * Math.sin(elevation)
         );
         camera.lookAt(scaledCenter);
         camera.updateProjectionMatrix();
@@ -766,15 +957,102 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
     sceneRef.current.controls.target.copy(target);
     sceneRef.current.camera.lookAt(target);
     sceneRef.current.camera.updateProjectionMatrix();
-  }, []);
+    // 复位模型旋转：将累积旋转反向应用
+    const identity = new THREE.Quaternion();
+    const center = sceneRef.current.controls.target;
+    const invRot = cumulativeRotRef.current.clone().invert();
+    for (const item of sceneRef.current.meshes) {
+      const mesh = item.mesh;
+      mesh.position.sub(center);
+      mesh.position.applyQuaternion(invRot);
+      mesh.position.add(center);
+      mesh.quaternion.premultiply(invRot);
+    }
+    cumulativeRotRef.current.copy(identity);
+    // 复位测量对象旋转
+    const mm = sceneRef.current.measurementManager;
+    if (mm) mm.applyRotation(invRot, center);
+    // 停止旋转
+    if (isAutoRotating) {
+      setIsAutoRotating(false);
+      autoRotateRef.current = false;
+    }
+  }, [isAutoRotating]);
 
   // 旋转展示切换
   const handleToggleAutoRotate = useCallback(() => {
     const next = !isAutoRotating;
     setIsAutoRotating(next);
     autoRotateRef.current = next;
-    // 旋转模型不影响相机/controls，无需同步操作
-  }, [isAutoRotating]);
+    // 开启旋转时自动退出测距模式
+    if (next && isMeasuring) {
+      setIsMeasuring(false);
+      isMeasuringRef.current = false;
+      const mm = sceneRef.current?.measurementManager;
+      if (mm) {
+        mm.setActive(false);
+        mm.cancelPending();
+      }
+    }
+  }, [isAutoRotating, isMeasuring]);
+
+  // 测距模式切换
+  const handleToggleMeasure = useCallback(() => {
+    const next = !isMeasuring;
+    setIsMeasuring(next);
+    isMeasuringRef.current = next;
+    const mm = sceneRef.current?.measurementManager;
+    if (next && mm) {
+      mm.setActive(true);
+    } else if (!next && mm) {
+      mm.cancelPending();
+      mm.setActive(false);
+    }
+  }, [isMeasuring]);
+
+  // 删除测量
+  const handleDeleteMeasurement = useCallback((id: string) => {
+    sceneRef.current?.measurementManager?.removeMeasurement(id);
+  }, []);
+
+  // 清除所有测量
+  const handleClearMeasurements = useCallback(() => {
+    sceneRef.current?.measurementManager?.clearAll();
+  }, []);
+
+  // ─── 测距面板拖拽 ──────────────────────────────
+  const handlePanelDragStart = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const panel = measurePanelElRef.current;
+    if (!panel) return;
+    const pos = measurePanelPosRef.current ?? { x: panel.offsetLeft, y: panel.offsetTop };
+    measurePanelDragRef.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      origX: pos.x,
+      origY: pos.y,
+    };
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+  }, []);
+
+  const handlePanelDragMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    const drag = measurePanelDragRef.current;
+    if (!drag) return;
+    const dx = e.clientX - drag.startX;
+    const dy = e.clientY - drag.startY;
+    measurePanelPosRef.current = { x: drag.origX + dx, y: drag.origY + dy };
+    const panel = measurePanelElRef.current;
+    if (panel) {
+      panel.style.left = `${drag.origX + dx}px`;
+      panel.style.top = `${drag.origY + dy}px`;
+      panel.style.right = 'auto';
+    }
+  }, []);
+
+  const handlePanelDragEnd = useCallback(() => {
+    measurePanelDragRef.current = null;
+  }, []);
 
   // 背景切换
   const handleToggleBackground = useCallback(() => {
@@ -894,56 +1172,79 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
   }, [JSON.stringify(models.map(m => `${m.name}-${m.visible}-${m.opacity}`))]);
 
   return (
-    <div className="relative w-full h-full">
+    <div className={`relative w-full h-full${isMeasuring ? ' cursor-crosshair' : ''}`}>
       <div ref={containerRef} className="w-full h-full" />
-      
+
       {/* 右上角控制按钮 */}
       <div
-        className="absolute top-3 right-3 z-10 flex flex-col gap-2"
+        className="absolute top-3 right-3 z-10 flex flex-col gap-1.5 md:gap-2"
         onPointerDown={(e) => e.stopPropagation()}
         onClick={(e) => e.stopPropagation()}
       >
         <button
           onClick={handleReset}
-          className="group flex flex-col items-center gap-1 w-[72px] py-2.5 rounded-xl bg-white border border-gray-200/80 shadow-[0_2px_6px_rgba(0,0,0,0.08)] hover:shadow-[0_4px_12px_rgba(0,0,0,0.12)] hover:border-gray-300 active:scale-95 transition-all duration-200"
+          className="group flex flex-col items-center gap-0.5 md:gap-1 w-[52px] md:w-[72px] py-1.5 md:py-2.5 rounded-lg md:rounded-xl bg-white border border-gray-200/80 shadow-[0_2px_6px_rgba(0,0,0,0.08)] hover:shadow-[0_4px_12px_rgba(0,0,0,0.12)] hover:border-gray-300 active:scale-95 transition-all duration-200"
           title="复位视角"
         >
-          <img src="/icon-reset.png" alt="复位视角" className="w-6 h-6 object-contain" draggable={false} />
-          <span className="text-[10px] font-semibold text-slate-700 leading-tight">复位视角</span>
+          <img src="/icon-reset.png" alt="复位视角" className="w-4 h-4 md:w-6 md:h-6 object-contain" draggable={false} />
+          <span className="text-[8px] md:text-[10px] font-semibold text-slate-700 leading-tight">复位视角</span>
         </button>
 
         <button
           onClick={handleToggleBackground}
-          className="group flex flex-col items-center gap-1 w-[72px] py-2.5 rounded-xl bg-white border border-gray-200/80 shadow-[0_2px_6px_rgba(0,0,0,0.08)] hover:shadow-[0_4px_12px_rgba(0,0,0,0.12)] hover:border-gray-300 active:scale-95 transition-all duration-200"
+          className="group flex flex-col items-center gap-0.5 md:gap-1 w-[52px] md:w-[72px] py-1.5 md:py-2.5 rounded-lg md:rounded-xl bg-white border border-gray-200/80 shadow-[0_2px_6px_rgba(0,0,0,0.08)] hover:shadow-[0_4px_12px_rgba(0,0,0,0.12)] hover:border-gray-300 active:scale-95 transition-all duration-200"
           title={`切换背景（当前：${bgLabelsRef.current[bgColorIndex]}）`}
         >
-          <img src="/icon-bg.png" alt="切换背景" className="w-6 h-6 object-contain" draggable={false} />
-          <span className="text-[10px] font-semibold text-slate-700 leading-tight">切换背景</span>
+          <img src="/icon-bg.png" alt="切换背景" className="w-4 h-4 md:w-6 md:h-6 object-contain" draggable={false} />
+          <span className="text-[8px] md:text-[10px] font-semibold text-slate-700 leading-tight">切换背景</span>
         </button>
 
         <button
           onClick={handleToggleRenderMode}
-          className={`group flex flex-col items-center gap-1 w-[72px] py-2.5 rounded-xl border shadow-[0_2px_6px_rgba(0,0,0,0.08)] hover:shadow-[0_4px_12px_rgba(0,0,0,0.12)] active:scale-95 transition-all duration-200 ${
+          className={`group flex flex-col items-center gap-0.5 md:gap-1 w-[52px] md:w-[72px] py-1.5 md:py-2.5 rounded-lg md:rounded-xl border shadow-[0_2px_6px_rgba(0,0,0,0.08)] transition-all duration-200 ${
             renderMode === 'cinematic'
-              ? 'bg-gradient-to-b from-gray-50 to-gray-100 border-gray-300/80'
-              : 'bg-white border-gray-200/80 hover:border-gray-300'
+              ? 'bg-gradient-to-b from-gray-50 to-gray-100 border-gray-300/80 hover:shadow-[0_4px_12px_rgba(0,0,0,0.12)] active:scale-95'
+              : 'bg-white border-gray-200/80 hover:shadow-[0_4px_12px_rgba(0,0,0,0.12)] hover:border-gray-300 active:scale-95'
           }`}
           title={renderMode === 'cinematic' ? '切换为经典渲染' : '切换为电影级渲染'}
         >
           <img
             src={renderMode === 'cinematic' ? '/icon-cinematic.svg' : '/icon-classic.svg'}
             alt={renderMode === 'cinematic' ? '电影级' : '经典'}
-            className="w-7 h-7 object-contain"
+            className="w-5 h-5 md:w-7 md:h-7 object-contain"
             draggable={false}
           />
-          <span className="text-[10px] font-semibold text-slate-700 leading-tight">
+          <span className="text-[8px] md:text-[10px] font-semibold text-slate-700 leading-tight">
             {renderMode === 'cinematic' ? '电影渲染' : '经典渲染'}
           </span>
         </button>
 
         <button
+          onClick={handleToggleMeasure}
+          disabled={isAutoRotating}
+          className={`group flex flex-col items-center gap-0.5 md:gap-1 w-[52px] md:w-[72px] py-1.5 md:py-2.5 rounded-lg md:rounded-xl border shadow-[0_2px_6px_rgba(0,0,0,0.08)] transition-all duration-200 ${
+            isAutoRotating
+              ? 'bg-gray-100 border-gray-200/60 opacity-40 cursor-not-allowed'
+              : isMeasuring
+                ? 'bg-gradient-to-b from-gray-50 to-gray-100 border-gray-300/80 hover:shadow-[0_4px_12px_rgba(0,0,0,0.12)] active:scale-95'
+                : 'bg-white border-gray-200/80 hover:shadow-[0_4px_12px_rgba(0,0,0,0.12)] hover:border-gray-300 active:scale-95'
+          }`}
+          title={isMeasuring ? '退出测距' : '划线测距'}
+        >
+          <img
+            src="/icon-measure.svg"
+            alt="划线测距"
+            className="w-5 h-5 md:w-7 md:h-7 object-contain"
+            draggable={false}
+          />
+          <span className="text-[8px] md:text-[10px] font-semibold text-slate-700 leading-tight">
+            {isMeasuring ? '退出测距' : '划线测距'}
+          </span>
+        </button>
+
+        <button
           onClick={handleToggleAutoRotate}
-          className={`group flex flex-col items-center gap-1 w-[72px] py-2.5 rounded-xl border shadow-[0_2px_6px_rgba(0,0,0,0.08)] hover:shadow-[0_4px_12px_rgba(0,0,0,0.12)] active:scale-95 transition-all duration-200 ${
+          className={`group flex flex-col items-center gap-0.5 md:gap-1 w-[52px] md:w-[72px] py-1.5 md:py-2.5 rounded-lg md:rounded-xl border shadow-[0_2px_6px_rgba(0,0,0,0.08)] hover:shadow-[0_4px_12px_rgba(0,0,0,0.12)] active:scale-95 transition-all duration-200 ${
             isAutoRotating
               ? 'bg-gradient-to-b from-gray-50 to-gray-100 border-gray-300/80'
               : 'bg-white border-gray-200/80 hover:border-gray-300'
@@ -953,15 +1254,72 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
           <img
             src="/icon-rotate.svg"
             alt="旋转展示"
-            className="w-7 h-7 object-contain"
+            className="w-5 h-5 md:w-7 md:h-7 object-contain"
             style={isAutoRotating ? { animationDuration: '3s' } : undefined}
             draggable={false}
           />
-          <span className="text-[10px] font-semibold text-slate-700 leading-tight">
+          <span className="text-[8px] md:text-[10px] font-semibold text-slate-700 leading-tight">
             {isAutoRotating ? '停止旋转' : '旋转展示'}
           </span>
         </button>
       </div>
+
+      {/* 测距统计面板 — 可拖动，默认右上 */}
+      {measurements.length > 0 && (
+        <div
+          ref={measurePanelElRef}
+          className="absolute z-10 bg-white/95 backdrop-blur-sm rounded-xl border border-gray-200/80 shadow-[0_2px_8px_rgba(0,0,0,0.1)] min-w-[150px] max-w-[200px]"
+          style={{
+            top: measurePanelPosRef.current?.y ?? 12,
+            right: measurePanelPosRef.current ? 'auto' : 88,
+            left: measurePanelPosRef.current ? measurePanelPosRef.current.x : 'auto',
+          }}
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* 标题栏 — 可拖动 */}
+          <div
+            className="px-3 py-1.5 border-b border-gray-100 flex items-center justify-between cursor-grab active:cursor-grabbing select-none"
+            onPointerDown={handlePanelDragStart}
+            onPointerMove={handlePanelDragMove}
+            onPointerUp={handlePanelDragEnd}
+            onPointerCancel={handlePanelDragEnd}
+          >
+            <span className="text-xs font-bold text-slate-700">测距 (cm)</span>
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => setMeasurePanelCollapsed(c => !c)}
+                className="text-[10px] text-slate-400 hover:text-slate-600 font-medium transition-colors"
+              >
+                {measurePanelCollapsed ? '展开' : '折叠'}
+              </button>
+              <button
+                onClick={handleClearMeasurements}
+                className="text-[10px] text-red-500 hover:text-red-700 font-medium transition-colors"
+              >
+                清除
+              </button>
+            </div>
+          </div>
+          {!measurePanelCollapsed && (
+            <div className="px-3 py-1 max-h-[200px] overflow-y-auto">
+              {measurements.map((m, idx) => (
+                <div key={m.id} className="flex items-center justify-between py-0.5 group">
+                  <span className="text-xs text-slate-600">
+                    #{idx + 1}&ensp;{m.distance.toFixed(2)}
+                  </span>
+                  <button
+                    onClick={() => handleDeleteMeasurement(m.id)}
+                    className="text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all text-xs ml-2"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
       
       {isLoading && (
         <div className="absolute inset-0 flex items-center justify-center bg-white/80">
@@ -981,18 +1339,30 @@ export default function ThreeDViewer({ models, onVolumesLoaded }: ThreeDViewerPr
       )}
       
       <div className="absolute bottom-4 right-4 bg-white/90 border border-gray-200 rounded-lg px-3 py-2 text-xs text-gray-500">
-        <div className="hidden md:block">
-          <p className="font-medium text-gray-700 mb-0.5">电脑端操作</p>
-          <p>鼠标左键：旋转模型</p>
-          <p>鼠标右键：平移模型</p>
-          <p>滚轮：放大缩小</p>
-        </div>
-        <div className="md:hidden">
-          <p className="font-medium text-gray-700 mb-0.5">移动端操作</p>
-          <p>单指滑动：旋转模型</p>
-          <p>双指滑动：平移模型</p>
-          <p>双指捏合：放大缩小</p>
-        </div>
+        {isMeasuring ? (
+          <div>
+            <p className="font-medium text-gray-700 mb-0.5">测距模式</p>
+            <p>左键：放置测量点</p>
+            <p>右键：旋转模型</p>
+            <p>滚轮：放大缩小</p>
+            <p>Esc：取消当前/退出测距</p>
+          </div>
+        ) : (
+          <>
+            <div className="hidden md:block">
+              <p className="font-medium text-gray-700 mb-0.5">电脑端操作</p>
+              <p>鼠标左键：旋转模型</p>
+              <p>鼠标右键：平移模型</p>
+              <p>滚轮：放大缩小</p>
+            </div>
+            <div className="md:hidden">
+              <p className="font-medium text-gray-700 mb-0.5">移动端操作</p>
+              <p>单指滑动：旋转模型</p>
+              <p>双指滑动：平移模型</p>
+              <p>双指捏合：放大缩小</p>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="5 10 90 80" fill="none">
+  <!-- 尺子主体 -->
+  <rect x="10" y="40" width="80" height="16" rx="2" fill="#6B7280" fill-opacity="0.12" stroke="#6B7280" stroke-width="2.5" stroke-linejoin="round"/>
+  <!-- 刻度线 -->
+  <line x1="22" y1="40" x2="22" y2="48" stroke="#6B7280" stroke-width="1.8" stroke-linecap="round"/>
+  <line x1="34" y1="40" x2="34" y2="50" stroke="#6B7280" stroke-width="2" stroke-linecap="round"/>
+  <line x1="46" y1="40" x2="46" y2="48" stroke="#6B7280" stroke-width="1.8" stroke-linecap="round"/>
+  <line x1="58" y1="40" x2="58" y2="50" stroke="#6B7280" stroke-width="2" stroke-linecap="round"/>
+  <line x1="70" y1="40" x2="70" y2="48" stroke="#6B7280" stroke-width="1.8" stroke-linecap="round"/>
+  <line x1="82" y1="40" x2="82" y2="50" stroke="#6B7280" stroke-width="2" stroke-linecap="round"/>
+  <!-- 底部短刻度 -->
+  <line x1="28" y1="56" x2="28" y2="51" stroke="#6B7280" stroke-width="1.2" stroke-linecap="round"/>
+  <line x1="40" y1="56" x2="40" y2="51" stroke="#6B7280" stroke-width="1.2" stroke-linecap="round"/>
+  <line x1="52" y1="56" x2="52" y2="51" stroke="#6B7280" stroke-width="1.2" stroke-linecap="round"/>
+  <line x1="64" y1="56" x2="64" y2="51" stroke="#6B7280" stroke-width="1.2" stroke-linecap="round"/>
+  <line x1="76" y1="56" x2="76" y2="51" stroke="#6B7280" stroke-width="1.2" stroke-linecap="round"/>
+  <!-- 测量箭头线 -->
+  <line x1="15" y1="72" x2="85" y2="72" stroke="#6B7280" stroke-width="2" stroke-linecap="round"/>
+  <!-- 左箭头 -->
+  <polyline points="22,68 15,72 22,76" stroke="#6B7280" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <!-- 右箭头 -->
+  <polyline points="78,68 85,72 78,76" stroke="#6B7280" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+</svg>

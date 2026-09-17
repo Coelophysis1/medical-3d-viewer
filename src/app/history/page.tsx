@@ -170,7 +170,7 @@ function HistoryContent() {
 
   // 获取访问 URL
   const getViewUrl = (code: string) => {
-    const baseUrl = process.env.NEXT_PUBLIC_COZE_PROJECT_DOMAIN_DEFAULT || window.location.origin;
+    const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || window.location.origin;
     return `${baseUrl}/view?code=${code}`;
   };
 

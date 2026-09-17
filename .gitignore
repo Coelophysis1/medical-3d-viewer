@@ -98,3 +98,12 @@ Desktop.ini
 .turbo
 
 .coze-logs
+.cozeproj/reduction
+
+# Preview files
+.preview
+.codegraph
+
+# Runtime data (SQLite database & uploaded STL files)
+data/
+public/uploads/

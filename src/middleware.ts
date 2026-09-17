@@ -153,6 +153,38 @@ export function middleware(request: NextRequest) {
     }
   }
 
+  // 3. 病历访问码暴力枚举防护（GET /api/medical/config/[code]）
+  if (pathname.match(/^\/api\/medical\/config\/[^/]+$/) && request.method === 'GET') {
+    const clientIp = getClientIp(request);
+    const { allowed, retryAfter } = checkRateLimit(clientIp + ':config');
+
+    if (!allowed) {
+      return NextResponse.json(
+        { success: false, error: '请求过于频繁，请稍后再试' },
+        {
+          status: 429,
+          headers: { 'Retry-After': String(retryAfter) },
+        }
+      );
+    }
+  }
+
+  // 4. 患者验证暴力猜解防护（POST /api/patient/verify）
+  if (pathname === '/api/patient/verify' && request.method === 'POST') {
+    const clientIp = getClientIp(request);
+    const { allowed, retryAfter } = checkRateLimit(clientIp + ':verify');
+
+    if (!allowed) {
+      return NextResponse.json(
+        { success: false, error: '验证尝试过于频繁，请稍后再试' },
+        {
+          status: 429,
+          headers: { 'Retry-After': String(retryAfter) },
+        }
+      );
+    }
+  }
+
   return NextResponse.next();
 }
 
@@ -161,5 +193,7 @@ export const config = {
     '/admin/:path*',
     '/api/admin/:path*',
     '/api/auth/login',
+    '/api/medical/config/:path*',
+    '/api/patient/verify',
   ],
 };

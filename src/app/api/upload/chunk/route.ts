@@ -1,16 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { writeFile, mkdir, readFile, unlink, rmdir, readdir } from 'fs/promises';
 import { existsSync } from 'fs';
-import { createReadStream } from 'fs';
 import path from 'path';
-import { S3Storage } from 'coze-coding-dev-sdk';
-import { pipeline } from 'stream/promises';
-import { Readable } from 'stream';
+import os from 'os';
+import { requireAuth, unauthorizedResponse } from '@/lib/auth';
 
-const isProd = process.env.COZE_PROJECT_ENV === 'PROD';
-
-// 临时分块存储目录
-const CHUNK_DIR = '/tmp/upload-chunks';
+// 临时分块存储目录（跨平台兼容）
+const CHUNK_DIR = path.join(os.tmpdir(), 'upload-chunks');
 
 /**
  * 将中文/特殊字符替换为安全字符
@@ -66,6 +62,9 @@ function buildSafeFileName(originalName: string): string {
  */
 export async function POST(request: NextRequest) {
   try {
+    const authResult = await requireAuth(request);
+    if (!authResult.success) return unauthorizedResponse(authResult.error);
+
     const formData = await request.formData();
     const chunk = formData.get('chunk') as Blob | null;
     const uploadId = formData.get('uploadId') as string | null;
@@ -118,6 +117,9 @@ export async function POST(request: NextRequest) {
  */
 export async function PUT(request: NextRequest) {
   try {
+    const authResult = await requireAuth(request);
+    if (!authResult.success) return unauthorizedResponse(authResult.error);
+
     const { uploadId, totalChunks, fileName, title, department, patientName } =
       await request.json() as {
         uploadId: string;
@@ -169,15 +171,8 @@ export async function PUT(request: NextRequest) {
     const safeFileName = buildSafeFileName(fileName);
     const folderPrefix = buildFolderPrefix({ title, department, patientName });
 
-    let filePath: string;
-
-    if (isProd) {
-      // 生产环境：合并后上传到 S3
-      filePath = await assembleAndUploadToS3(chunkDir, chunkFiles, safeFileName, folderPrefix);
-    } else {
-      // 开发环境：合并后写入本地
-      filePath = await assembleAndSaveLocal(chunkDir, chunkFiles, safeFileName, folderPrefix);
-    }
+    // 合并后写入本地
+    const filePath = await assembleAndSaveLocal(chunkDir, chunkFiles, safeFileName, folderPrefix);
 
     // 清理临时分块
     try {
@@ -205,47 +200,6 @@ export async function PUT(request: NextRequest) {
 }
 
 /**
- * 将分块合并后上传到 S3（使用流式上传避免全量内存加载）
- */
-async function assembleAndUploadToS3(
-  chunkDir: string,
-  chunkFiles: string[],
-  safeFileName: string,
-  folderPrefix: string,
-): Promise<string> {
-  const storage = new S3Storage({
-    endpointUrl: process.env.COZE_BUCKET_ENDPOINT_URL,
-    accessKey: '',
-    secretKey: '',
-    bucketName: process.env.COZE_BUCKET_NAME,
-    region: 'cn-beijing',
-  });
-
-  const s3Key = `stl/${folderPrefix}/${safeFileName}`;
-
-  // 创建合并流：依次读取每个分块并输出为连续流
-  const mergedStream = Readable.from(
-    (async function* () {
-      for (const chunkFile of chunkFiles) {
-        const chunkPath = path.join(chunkDir, chunkFile);
-        const stream = createReadStream(chunkPath);
-        for await (const data of stream) {
-          yield data;
-        }
-      }
-    })()
-  );
-
-  const actualKey = await storage.streamUploadFile({
-    stream: mergedStream,
-    fileName: s3Key,
-    contentType: 'application/octet-stream',
-  });
-
-  return `s3://${actualKey}`;
-}
-
-/**
  * 将分块合并后写入本地文件
  */
 async function assembleAndSaveLocal(
@@ -254,7 +208,7 @@ async function assembleAndSaveLocal(
   safeFileName: string,
   folderPrefix: string,
 ): Promise<string> {
-  const uploadDir = path.join(process.cwd(), 'public', 'STL文件', folderPrefix);
+  const uploadDir = path.join(process.cwd(), 'public', 'uploads', 'stl', folderPrefix);
   if (!existsSync(uploadDir)) {
     await mkdir(uploadDir, { recursive: true });
   }
@@ -262,12 +216,13 @@ async function assembleAndSaveLocal(
   const finalPath = path.join(uploadDir, safeFileName);
 
   // 依次将每个分块追加写入最终文件
-  for (const chunkFile of chunkFiles) {
+  for (let i = 0; i < chunkFiles.length; i++) {
+    const chunkFile = chunkFiles[i];
     const chunkPath = path.join(chunkDir, chunkFile);
     const chunkData = await readFile(chunkPath);
 
     // 追加写入：第一次创建文件，后续追加
-    if (chunkFile === chunkFiles[0]) {
+    if (i === 0) {
       await writeFile(finalPath, chunkData);
     } else {
       const { appendFile } = await import('fs/promises');
@@ -275,7 +230,7 @@ async function assembleAndSaveLocal(
     }
   }
 
-  return `STL文件/${folderPrefix}/${safeFileName}`;
+  return `uploads/stl/${folderPrefix}/${safeFileName}`;
 }
 
 /**
@@ -285,6 +240,9 @@ async function assembleAndSaveLocal(
  */
 export async function DELETE(request: NextRequest) {
   try {
+    const authResult = await requireAuth(request);
+    if (!authResult.success) return unauthorizedResponse(authResult.error);
+
     const { uploadId } = await request.json() as { uploadId: string };
 
     if (!uploadId) {

@@ -31,12 +31,14 @@ export async function verifyPassword(password: string, hash: string): Promise<bo
   return bcrypt.compare(password, hash);
 }
 
-// 初始化管理员账号（从环境变量读取，未配置则使用默认值）
-const DEFAULT_ADMIN_USERNAME = 'admin';
-const DEFAULT_ADMIN_PASSWORD = 'Admin@123456';
+// 初始化管理员账号（从环境变量读取，未配置则跳过）
 export async function initializeAdmin(): Promise<{ success: boolean; message: string }> {
-  const adminUsername = process.env.ADMIN_USERNAME || DEFAULT_ADMIN_USERNAME;
-  const adminPassword = process.env.ADMIN_PASSWORD || DEFAULT_ADMIN_PASSWORD;
+  const adminUsername = process.env.ADMIN_USERNAME || 'admin';
+  const adminPassword = process.env.ADMIN_PASSWORD;
+
+  if (!adminPassword) {
+    return { success: false, message: 'ADMIN_PASSWORD 环境变量未配置，跳过管理员初始化' };
+  }
 
   // 检查是否已存在
   const existing = await queryOne('SELECT id FROM users WHERE username = $1', [adminUsername]);
@@ -60,9 +62,11 @@ export async function initializeAdmin(): Promise<{ success: boolean; message: st
 }
 
 // 初始化额外用户（从环境变量读取，格式: user1:pass1:role1,user2:pass2:role2）
-const DEFAULT_INITIAL_USERS = 'doctor1:Doctor@123:doctor';
 export async function initializeUsers(): Promise<{ success: boolean; message: string }> {
-  const initialUsers = process.env.INITIAL_USERS || DEFAULT_INITIAL_USERS;
+  const initialUsers = process.env.INITIAL_USERS;
+  if (!initialUsers) {
+    return { success: true, message: '无额外用户需初始化' };
+  }
   const results: string[] = [];
 
   const userEntries = initialUsers.split(',').map(s => s.trim()).filter(Boolean);
@@ -141,9 +145,14 @@ export async function getUserByUsername(username: string): Promise<UserWithPassw
 // 根据ID获取用户
 export async function getUserById(id: number): Promise<User | null> {
   return queryOne<User>(
-    'SELECT id, username, role, status, created_at, updated_at FROM users WHERE id = $1',
+    'SELECT id, username, role, status, token_version, created_at, updated_at FROM users WHERE id = $1',
     [id]
   );
+}
+
+// 递增用户的 token_version（用于登出/改密码时使旧 Token 失效）
+export async function incrementTokenVersion(userId: number): Promise<void> {
+  await execute('UPDATE users SET token_version = token_version + 1 WHERE id = $1', [userId]);
 }
 
 // 获取所有用户
@@ -206,15 +215,22 @@ export async function deleteUser(id: number): Promise<{ success: boolean; error?
   }
 }
 
-// 用户登录验证
+// 固定的假密码哈希，用于用户不存在时消除时序差异
+const FAKE_HASH = '$2b$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy';
+
+// 用户登录验证（防时序攻击：用户不存在时也执行 bcrypt 比较）
 export async function authenticateUser(username: string, password: string): Promise<{ success: boolean; user?: User; error?: string }> {
   const user = await getUserByUsername(username);
 
   if (!user) {
+    // 对假哈希执行 bcrypt 比较，耗时与真实验证一致，防止时序攻击枚举用户名
+    await verifyPassword(password, FAKE_HASH);
     return { success: false, error: '用户名或密码错误' };
   }
 
   if (user.status === 'disabled') {
+    // 同样执行 bcrypt 比较以保持时序一致
+    await verifyPassword(password, user.password_hash);
     return { success: false, error: '账号已被禁用' };
   }
 

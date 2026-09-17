@@ -214,8 +214,8 @@ function ViewPageContent() {
                         </div>
                         {modelVolumes[index] !== undefined && modelVolumes[index].volume > 0 && (
                           <div className="mt-0.5 sm:mt-1 bg-gray-50 rounded px-1 py-0.5 sm:px-1.5 text-[8px] sm:text-[10px] text-gray-600 font-mono">
-                            <div>体积: {formatVolume(modelVolumes[index].volume)} mL</div>
-                            <div>外包围: {(modelVolumes[index].dimX / 10).toFixed(1)}×{(modelVolumes[index].dimY / 10).toFixed(1)}×{(modelVolumes[index].dimZ / 10).toFixed(1)} cm</div>
+                            <div>体积(mL): {formatVolume(modelVolumes[index].volume)}</div>
+                            <div>大小(cm): {(modelVolumes[index].dimX / 10).toFixed(1)}×{(modelVolumes[index].dimY / 10).toFixed(1)}×{(modelVolumes[index].dimZ / 10).toFixed(1)}</div>
                           </div>
                         )}
                         <div className="mt-1 sm:mt-1.5 space-y-0.5 sm:space-y-1">

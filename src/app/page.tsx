@@ -9,9 +9,7 @@ export default function HomePage() {
 
     return (
         <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
-            {}
-            <nav
-                className="bg-white/80 backdrop-blur-sm border-b border-blue-100 sticky top-0 z-10">
+            <nav className="bg-white/80 backdrop-blur-sm border-b border-blue-100 sticky top-0 z-10">
                 <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
                     <div className="flex items-center gap-2">
                         <Box className="w-6 h-6 text-blue-600" />
@@ -20,32 +18,30 @@ export default function HomePage() {
                     <Button
                         variant="ghost"
                         onClick={() => router.push("/upload")}
-                        className="text-blue-600 hover:text-blue-700 hover:bg-blue-50">
+                        className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                    >
                         <Settings className="w-4 h-4 mr-2" />配置管理
-                                  </Button>
+                    </Button>
                 </div>
             </nav>
-            {}
+
             <main className="max-w-6xl mx-auto px-6 py-16">
                 <div className="text-center mb-12">
                     <h1 className="text-4xl font-bold text-gray-900 mb-4">苏大附一院医学3D模型可视化平台</h1>
-                    <p className="text-lg text-gray-600 max-w-2xl mx-auto">上传您的STL格式三维医学模型，配置可视化参数，生成可分享的3D展示页面
-                                  </p>
+                    <p className="text-lg text-gray-600 max-w-2xl mx-auto">上传您的STL格式三维医学模型，配置可视化参数，生成可分享的3D展示页面</p>
                 </div>
-                {}
+
                 <div className="grid md:grid-cols-2 gap-6 max-w-4xl mx-auto mb-12">
-                    {}
                     <Card
                         className="group hover:shadow-lg transition-all duration-300 hover:border-blue-300 cursor-pointer"
-                        onClick={() => router.push("/upload")}>
+                        onClick={() => router.push("/upload")}
+                    >
                         <CardHeader>
-                            <div
-                                className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center mb-4 group-hover:bg-blue-200 transition-colors">
+                            <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center mb-4 group-hover:bg-blue-200 transition-colors">
                                 <Upload className="w-6 h-6 text-blue-600" />
                             </div>
                             <CardTitle>配置与上传</CardTitle>
-                            <CardDescription>上传STL格式的3D模型文件，配置颜色、透明度等参数
-                                              </CardDescription>
+                            <CardDescription>上传STL格式的3D模型文件，配置颜色、透明度等参数</CardDescription>
                         </CardHeader>
                         <CardContent>
                             <Button
@@ -57,17 +53,14 @@ export default function HomePage() {
                             </Button>
                         </CardContent>
                     </Card>
-                    {}
-                    <Card
-                        className="group hover:shadow-lg transition-all duration-300 hover:border-green-300">
+
+                    <Card className="group hover:shadow-lg transition-all duration-300 hover:border-green-300">
                         <CardHeader>
-                            <div
-                                className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center mb-4 group-hover:bg-green-200 transition-colors">
+                            <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center mb-4 group-hover:bg-green-200 transition-colors">
                                 <Eye className="w-6 h-6 text-green-600" />
                             </div>
                             <CardTitle>3D模型展示</CardTitle>
-                            <CardDescription>通过访问码查看已配置的3D医学模型展示页面
-                                              </CardDescription>
+                            <CardDescription>通过访问码查看已配置的3D医学模型展示页面</CardDescription>
                         </CardHeader>
                         <CardContent>
                             <div className="bg-gray-50 rounded-lg p-4 text-center text-sm text-gray-500">
@@ -77,7 +70,7 @@ export default function HomePage() {
                         </CardContent>
                     </Card>
                 </div>
-                {}
+
                 <Card className="max-w-4xl mx-auto bg-white/60 backdrop-blur-sm">
                     <CardHeader>
                         <CardTitle className="text-lg">使用说明</CardTitle>
@@ -85,8 +78,7 @@ export default function HomePage() {
                     <CardContent>
                         <div className="grid md:grid-cols-3 gap-6 text-sm">
                             <div className="flex gap-3">
-                                <div
-                                    className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
+                                <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
                                     <span className="text-blue-600 font-bold">1</span>
                                 </div>
                                 <div>
@@ -95,8 +87,7 @@ export default function HomePage() {
                                 </div>
                             </div>
                             <div className="flex gap-3">
-                                <div
-                                    className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
+                                <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
                                     <span className="text-blue-600 font-bold">2</span>
                                 </div>
                                 <div>
@@ -105,8 +96,7 @@ export default function HomePage() {
                                 </div>
                             </div>
                             <div className="flex gap-3">
-                                <div
-                                    className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
+                                <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
                                     <span className="text-blue-600 font-bold">3</span>
                                 </div>
                                 <div>
@@ -117,7 +107,7 @@ export default function HomePage() {
                         </div>
                     </CardContent>
                 </Card>
-                {}
+
                 <div className="max-w-4xl mx-auto mt-8 text-center text-sm text-gray-400">
                     <p>规则：支持 STL 格式3D模型文件 | 最多20个模型 | 颜色与透明度自定义</p>
                 </div>

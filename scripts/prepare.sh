@@ -1,9 +1,9 @@
 #!/bin/bash
 set -Eeuo pipefail
 
-COZE_WORKSPACE_PATH="${COZE_WORKSPACE_PATH:-$(pwd)}"
+WORKSPACE_PATH="$(cd "$(dirname "$0")/.." && pwd)"
 
-cd "${COZE_WORKSPACE_PATH}"
+cd "${WORKSPACE_PATH}"
 
 echo "Installing dependencies..."
 

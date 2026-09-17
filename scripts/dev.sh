@@ -2,10 +2,10 @@
 set -Eeuo pipefail
 
 PORT=5000
-COZE_WORKSPACE_PATH="${COZE_WORKSPACE_PATH:-$(pwd)}"
-DEPLOY_RUN_PORT=5000
+WORKSPACE_PATH="$(cd "$(dirname "$0")/.." && pwd)"
+DEPLOY_RUN_PORT="${DEPLOY_RUN_PORT:-${PORT}}"
 
-cd "${COZE_WORKSPACE_PATH}"
+cd "${WORKSPACE_PATH}"
 
 kill_port_if_listening() {
     local pids
@@ -61,4 +61,4 @@ fi
 
 echo "Starting HTTP service on port ${PORT} for dev..."
 
-PORT=$PORT pnpm tsx watch src/server.ts
+PORT=${DEPLOY_RUN_PORT} pnpm tsx watch src/server.ts

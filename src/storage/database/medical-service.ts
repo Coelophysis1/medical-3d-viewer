@@ -2,7 +2,7 @@ import { query, queryOne, insertAndGet, execute } from './db';
 import type { MedicalConfig, ModelConfig, ModelColor } from '@/types/medical';
 
 // 生成随机访问码
-function generateCode(length: number = 5): string {
+function generateCode(length: number = 8): string {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
   let result = '';
   for (let i = 0; i < length; i++) {
@@ -70,7 +70,7 @@ export async function createMedicalConfig(config: Omit<MedicalConfig, 'id' | 'co
     }
   }
 
-  const baseUrl = process.env.COZE_PROJECT_DOMAIN_DEFAULT || 'http://localhost:5000';
+  const baseUrl = process.env.SITE_URL || process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:5000';
   return {
     success: true,
     code,
@@ -176,45 +176,30 @@ export async function deleteMedicalConfig(
   const filePaths = modelData.map(m => m.file_path);
   const modelCount = modelData.length;
 
-  // 3. 删除文件
+  // 3. 删除文件 (本地文件系统)
   const deleteErrors: string[] = [];
   for (const filePath of filePaths) {
     try {
-      if (filePath.startsWith('s3://')) {
-        // S3 文件删除（生产环境）
-        const { S3Storage } = await import('coze-coding-dev-sdk');
-        const storage = new S3Storage({
-          endpointUrl: process.env.COZE_BUCKET_ENDPOINT_URL,
-          accessKey: '',
-          secretKey: '',
-          bucketName: process.env.COZE_BUCKET_NAME,
-          region: 'cn-beijing',
-        });
-        const s3Key = filePath.slice(5);
-        await storage.deleteFile({ fileKey: s3Key });
-      } else {
-        // 本地文件删除
-        const path = await import('path');
-        const { unlink, rmdir, readdir } = await import('fs/promises');
-        const { existsSync } = await import('fs');
-        const fullPath = path.join(process.cwd(), 'public', filePath);
-        if (existsSync(fullPath)) {
-          await unlink(fullPath);
-        }
-        // 清理空目录
-        const lastSlash = filePath.lastIndexOf('/');
-        if (lastSlash > 0) {
-          const folder = filePath.substring(0, lastSlash);
-          const folderPath = path.join(process.cwd(), 'public', folder);
-          if (existsSync(folderPath)) {
-            try {
-              const remaining = await readdir(folderPath);
-              if (remaining.length === 0) {
-                await rmdir(folderPath);
-              }
-            } catch {
-              // 目录可能已被删除或不为空，忽略
+      const pathModule = await import('path');
+      const { unlink, rmdir, readdir } = await import('fs/promises');
+      const { existsSync } = await import('fs');
+      const fullPath = pathModule.join(process.cwd(), 'public', filePath);
+      if (existsSync(fullPath)) {
+        await unlink(fullPath);
+      }
+      // 清理空目录
+      const lastSlash = filePath.lastIndexOf('/');
+      if (lastSlash > 0) {
+        const folder = filePath.substring(0, lastSlash);
+        const folderPath = pathModule.join(process.cwd(), 'public', folder);
+        if (existsSync(folderPath)) {
+          try {
+            const remaining = await readdir(folderPath);
+            if (remaining.length === 0) {
+              await rmdir(folderPath);
             }
+          } catch {
+            // 目录可能已被删除或不为空，忽略
           }
         }
       }
